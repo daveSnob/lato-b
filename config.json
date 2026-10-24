@@ -135,6 +135,12 @@
       "kind": "approfondimenti"
     },
     {
+      "name": "Under the Radar",
+      "lang": "en",
+      "url": "https://www.undertheradarmag.com/site/rss",
+      "kind": "auto"
+    },
+    {
       "name": "DIY",
       "lang": "en",
       "url": "https://diymag.com/feed",
