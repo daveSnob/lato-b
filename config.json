@@ -103,6 +103,108 @@
       "lang": "fr",
       "url": "https://www.lesinrocks.com/musique/feed/",
       "kind": "auto"
+    },
+    {
+      "name": "The Guardian",
+      "lang": "en",
+      "url": "https://www.theguardian.com/music/rss",
+      "kind": "auto"
+    },
+    {
+      "name": "Still Listening",
+      "lang": "en",
+      "url": "https://www.stilllisteningmagazine.com/reviews?format=rss",
+      "kind": "dischi"
+    },
+    {
+      "name": "Still Listening",
+      "lang": "en",
+      "url": "https://www.stilllisteningmagazine.com/news?format=rss",
+      "kind": "notizie"
+    },
+    {
+      "name": "Still Listening",
+      "lang": "en",
+      "url": "https://www.stilllisteningmagazine.com/features?format=rss",
+      "kind": "approfondimenti"
+    },
+    {
+      "name": "Still Listening",
+      "lang": "en",
+      "url": "https://www.stilllisteningmagazine.com/start-listening-to?format=rss",
+      "kind": "approfondimenti"
+    },
+    {
+      "name": "Under the Radar",
+      "lang": "en",
+      "url": "https://www.undertheradarmag.com/site/rss",
+      "kind": "auto"
+    },
+    {
+      "name": "DIY",
+      "lang": "en",
+      "url": "https://diymag.com/feed",
+      "kind": "auto"
+    },
+    {
+      "name": "Beats Per Minute",
+      "lang": "en",
+      "url": "https://beatsperminute.com/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "Clash",
+      "lang": "en",
+      "url": "https://www.clashmusic.com/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "Post-Punk.com",
+      "lang": "en",
+      "url": "https://post-punk.com/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "God Is In The TV",
+      "lang": "en",
+      "url": "https://www.godisinthetvzine.co.uk/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "Narc",
+      "lang": "en",
+      "url": "https://narcmagazine.com/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "Atwood Magazine",
+      "lang": "en",
+      "url": "https://atwoodmagazine.com/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "PopMatters",
+      "lang": "en",
+      "url": "https://www.popmatters.com/category/music/feed",
+      "kind": "auto"
+    },
+    {
+      "name": "Distorsioni",
+      "lang": "it",
+      "url": "https://www.distorsioni.net/feed",
+      "kind": "dischi"
+    },
+    {
+      "name": "Impatto Sonoro",
+      "lang": "it",
+      "url": "https://www.impattosonoro.it/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "Rockit",
+      "lang": "it",
+      "url": "https://www.rockit.it/rss",
+      "kind": "auto"
     }
   ],
   "reddit": [
@@ -233,6 +335,7 @@
     "Eurovision",
     "Grammy",
     "Billboard Hot 100",
-    "Super Bowl"
+    "Super Bowl",
+    "Troye Sivan"
   ]
 }

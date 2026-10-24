@@ -170,9 +170,10 @@ const norm = s => ' ' + s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 const unquote = s => s.replace(/^[\s‘'"“«]+|[\s’'"”»]+$/g, '').replace(/\s*[([].*?[)\]]\s*/g, ' ').trim();
 // artista e album dai titoli strutturati: "Artista – Album", "Artista : Album", "Album by Artista", slug di Pitchfork
 function albumKey(r) {
-  const t = r.title.replace(/^(album of the week|review)\s*:\s*/i, '');
+  const t = r.title.replace(/^(album of the week|album review|ep review|review)\s*:\s*/i, '').replace(/\s+(ep\s+)?review$/i, '');
   let m = t.match(/^(.+?)\s+[-–—:]\s+(.+)$/);
-  if (m && !/\breview\b/i.test(t)) return { artist: unquote(m[1]), album: unquote(m[2]) };
+  // "Album (2026) Etichetta" (Distorsioni): via anno ed etichetta
+  if (m && !/\breview\b/i.test(t)) return { artist: unquote(m[1]), album: unquote(m[2].replace(/\s*\((19|20)\d\d\).*$/, '').replace(/\s*\/\s*rece$/i, '')) };
   m = t.match(/^(.+?)\s+by\s+(.+)$/);
   if (m && r.src === 'The Quietus') return { artist: unquote(m[2]), album: unquote(m[1]) };
   if (r.src === 'Pitchfork') {
@@ -182,7 +183,7 @@ function albumKey(r) {
   }
   return null;
 }
-const reviews = Object.values(archive).map(r => ({ ...r, hay: norm(`${r.title} ${r.link.split('/').filter(Boolean).slice(-2).join(' ').replace(/-/g, ' ')} ${r.ex}`) }));
+const reviews = Object.values(archive).filter(r => !blocked({ title: r.title, cats: [] })).map(r => ({ ...r, hay: norm(`${r.title} ${r.link.split('/').filter(Boolean).slice(-2).join(' ').replace(/-/g, ' ')} ${r.ex}`) }));
 const consensus = [];
 const claimed = new Set();
 for (const r of reviews.filter(r => albumKey(r)).sort((a, b) => b.ts - a.ts)) {
