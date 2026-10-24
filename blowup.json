@@ -1,0 +1,16 @@
+{
+  "issue": "Blow Up #341 · ottobre 2026",
+  "note": "Blow Up non ha un feed RSS e blocca i download automatici: questa sezione si aggiorna a mano una volta al mese.",
+  "items": [
+    { "title": "Italian Hauntology", "url": "https://www.blowupmagazine.com/cont/italian-hauntology.asp", "tag": "#341" },
+    { "title": "Dossier 07: Punk 1976-2026 (pt. 3)", "url": "https://www.blowupmagazine.com/cont/dossier-07-punk-1976-2026-pt3.asp", "tag": "#341" },
+    { "title": "Godflesh", "url": "https://www.blowupmagazine.com/cont/godflesh.asp", "tag": "#341" },
+    { "title": "Neptune (intervista)", "url": "https://www.blowupmagazine.com/cont/neptune-int.asp", "tag": "#340" },
+    { "title": "Bonzo Dog Doo-Dah Band", "url": "https://www.blowupmagazine.com/cont/bonzo-dog-doo-dah-band.asp", "tag": "#340" },
+    { "title": "Fleur Jaeggy", "url": "https://www.blowupmagazine.com/cont/fleur-jaeggy.asp", "tag": "#340" },
+    { "title": "LIVE! Visti e sentiti", "url": "https://www.blowupmagazine.com/cont/live-visti-e-sentiti.asp", "tag": "#340" },
+    { "title": "Eliane Radigue: un ricordo", "url": "https://www.blowupmagazine.com/cont/eliane-radigue-un-ricordo.asp", "tag": "#338/339" },
+    { "title": "Director's Cut: Joni Mitchell. Nostra signora del canyon", "url": "https://www.blowupmagazine.com/prod/joni-mitchell.asp", "tag": "Libro · ott 2026" },
+    { "title": "Director's Cut: Current 93. Nelle estati delle locuste", "url": "https://www.blowupmagazine.com/prod/current-93.asp", "tag": "Libro · lug 2026" }
+  ]
+}
