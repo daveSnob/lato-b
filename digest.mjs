@@ -97,6 +97,12 @@ function classify(it, feed) {
 }
 
 // ---------- raccolta ----------
+// archivio delle recensioni (45 giorni) per "Più recensiti": i feed mostrano solo le ultime
+const ARCHIVE = join(DIR, 'reviews-db.json');
+const ARCHIVE_DAYS = 45;
+let archive = {};
+try { archive = JSON.parse(await readFile(ARCHIVE, 'utf8')); } catch {}
+
 const status = [];
 const seen = new Set();
 const items = [];
@@ -109,8 +115,9 @@ await Promise.all(cfg.feeds.map(async feed => {
       const section = classify(it, feed);
       const win = (section === 'dischi' ? cfg.windowHours * 2 : cfg.windowHours) * H;
       const dbg = process.env.DEBUG === feed.name;
-      if (it.ts && NOW - it.ts > win) { if (dbg) console.error('vecchio', it.title, new Date(it.ts).toISOString(), section); continue; }
       if (blocked(it)) { if (dbg) console.error('bloccato', it.title); continue; }
+      if (section === 'dischi' && !archive[it.link]) archive[it.link] = { src: feed.name, title: it.title, link: it.link, ts: it.ts || NOW, ex: excerpt(it.rawDesc, it.title) };
+      if (it.ts && NOW - it.ts > win) { if (dbg) console.error('vecchio', it.title, new Date(it.ts).toISOString(), section); continue; }
       seen.add(it.link);
       items.push({ src: feed.name, lang: feed.lang, section, title: it.title, link: it.link, ts: it.ts, ex: excerpt(it.rawDesc, it.title) });
       n++;
@@ -154,6 +161,47 @@ else {
 }
 status.push(redditOk && !freshStale ? { name: 'r/indieheads', ok: true, n: fresh.length } : { name: 'r/indieheads', ok: false, err: (redditErr || 'nessun post') + (freshStale ? ' (uso la copia precedente)' : '') });
 
+// ---------- più recensiti ----------
+for (const [k, r] of Object.entries(archive)) if (NOW - r.ts > ARCHIVE_DAYS * 24 * H) delete archive[k];
+await writeFile(ARCHIVE, JSON.stringify(archive));
+
+const norm = s => ' ' + s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\./g, '').replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+const unquote = s => s.replace(/^[\s‘'"“«]+|[\s’'"”»]+$/g, '').replace(/\s*[([].*?[)\]]\s*/g, ' ').trim();
+// artista e album dai titoli strutturati: "Artista – Album", "Artista : Album", "Album by Artista", slug di Pitchfork
+function albumKey(r) {
+  const t = r.title.replace(/^(album of the week|review)\s*:\s*/i, '');
+  let m = t.match(/^(.+?)\s+[-–—:]\s+(.+)$/);
+  if (m && !/\breview\b/i.test(t)) return { artist: unquote(m[1]), album: unquote(m[2]) };
+  m = t.match(/^(.+?)\s+by\s+(.+)$/);
+  if (m && r.src === 'The Quietus') return { artist: unquote(m[2]), album: unquote(m[1]) };
+  if (r.src === 'Pitchfork') {
+    const slug = (r.link.match(/\/reviews\/albums\/([^/]+)/) || [])[1] || '';
+    const albumSlug = norm(unquote(t)).trim().replace(/ /g, '-');
+    if (albumSlug && slug.endsWith('-' + albumSlug)) return { artist: slug.slice(0, -albumSlug.length - 1).replace(/-/g, ' '), album: unquote(t) };
+  }
+  return null;
+}
+const reviews = Object.values(archive).map(r => ({ ...r, hay: norm(`${r.title} ${r.link.split('/').filter(Boolean).slice(-2).join(' ').replace(/-/g, ' ')} ${r.ex}`) }));
+const consensus = [];
+const claimed = new Set();
+for (const r of reviews.filter(r => albumKey(r)).sort((a, b) => b.ts - a.ts)) {
+  if (claimed.has(r.link)) continue;
+  const { artist, album } = albumKey(r);
+  const na = norm(artist), nb = norm(album);
+  if (na.trim().length < 2 || nb.trim().length < 2) continue;
+  const bySrc = new Map();
+  for (const o of reviews) if (!claimed.has(o.link) && o.hay.includes(na) && o.hay.includes(nb) && !bySrc.has(o.src)) bySrc.set(o.src, o);
+  if (bySrc.size < 2) continue;
+  const list = [...bySrc.values()].sort((a, b) => a.ts - b.ts);
+  list.forEach(o => claimed.add(o.link));
+  // il nome scritto da una rivista è più fedele di quello ricavato dallo slug di Pitchfork
+  const better = list.map(o => o.src !== 'Pitchfork' && albumKey(o)).find(Boolean);
+  const label = better || { artist: r.src === 'Pitchfork' ? artist.replace(/\b\w/g, c => c.toUpperCase()) : artist, album };
+  consensus.push({ artist: label.artist, album: label.album, list, last: Math.max(...list.map(o => o.ts)), ex: (list.find(o => o.ex) || {}).ex || '' });
+}
+consensus.sort((a, b) => b.list.length - a.list.length || b.last - a.last);
+
 items.sort((a, b) => b.ts - a.ts);
 fresh.sort((a, b) => b.ts - a.ts);
 
@@ -161,11 +209,13 @@ fresh.sort((a, b) => b.ts - a.ts);
 const h = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const fmt = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const fmtLong = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'short' });
 const isNew = ts => ts && NOW - ts < cfg.newHours * H;
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const LANG = { it: 'IT', en: 'EN', fr: 'FR' };
 
 const SECTIONS = [
+  { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
   { id: 'dischi', title: 'Dischi', sub: `Recensioni e uscite, ultimi ${cfg.windowHours * 2 / 24} giorni` },
   { id: 'brani', title: 'Brani e video', sub: 'Singoli, anteprime, clip' },
   { id: 'fresh', title: 'Fresh su r/indieheads', sub: 'Post taggati [FRESH], [FRESH ALBUM], [FRESH EP]…' },
@@ -200,6 +250,14 @@ function section(s) {
   <div><h3>Album, EP, mixtape <span class="n">${long.length}</span></h3><ul class="frl">${long.map(freshRow).join('') || `<li class="empty">Nessun album nelle ultime ${cfg.windowHours} ore.</li>`}</ul></div>
   <div><h3>Brani, video, live <span class="n">${short.length}</span></h3><ul class="frl">${short.map(freshRow).join('') || `<li class="empty">Nessun brano nelle ultime ${cfg.windowHours} ore.</li>`}</ul></div>
 </div>` : '<p class="empty">Reddit non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>');
+  } else if (s.id === 'piu-recensiti') {
+    count = consensus.length;
+    inner = count ? `<ol class="cons">${consensus.map(c => `<li class="ca">
+  <div class="cn" aria-label="${c.list.length} recensioni">${c.list.length}</div>
+  <div class="body"><p class="cat"><b>${h(c.artist)}</b> – ${h(c.album)}</p>${c.ex ? `<p class="ex">${h(c.ex)}</p>` : ''}
+  <p class="revs">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a><time>${h(fmtDay.format(o.ts))}</time>`).join('<span aria-hidden="true">·</span>')}</p></div>
+</li>`).join('')}</ol>`
+      : `<p class="empty">Nessun album recensito da più riviste per ora. L'archivio si riempie a ogni aggiornamento: in pochi giorni compariranno i primi.</p>`;
   } else if (s.id === 'blowup') {
     count = blowup.items.length;
     inner = `<ul class="bu">${blowup.items.map(b => `<li><a href="${h(b.url)}" target="_blank" rel="noopener">${h(b.title)}</a><span class="tag">${h(b.tag)}</span></li>`).join('')}</ul><p class="note">${h(blowup.note)}</p>`;
@@ -274,6 +332,14 @@ ul{list-style:none;margin:0;padding:0}
 .ft b{font-weight:600}
 .fr[data-new] .ft::after{content:"nuovo";margin-left:8px;font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--hot)}
 .links{grid-column:2;display:flex;gap:12px;font:400 12px/1.4 var(--mono);color:var(--muted)}
+.cons{list-style:none;margin:0;padding:0}
+.ca{display:grid;grid-template-columns:56px 1fr;gap:4px 16px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.cn{font:900 44px/.9 var(--display);color:var(--accent);font-variant-numeric:tabular-nums}
+.cat{margin:0;font-size:17px;line-height:1.35}
+.cat b{font-weight:600}
+.revs{display:flex;flex-wrap:wrap;gap:4px 8px;margin:6px 0 0;font:400 12px/1.5 var(--mono);color:var(--muted)}
+.revs a{color:var(--accent);font-weight:500}
+.revs time{margin-left:4px}
 .links a{color:var(--accent)}
 .bu li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--rule)}
 .bu a{font-weight:600;text-decoration:none}

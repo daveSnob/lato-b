@@ -24,12 +24,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # ultimi post [FRESH] scaricati: servono se Reddit non risponde
+      # ultimi [FRESH] (se Reddit non risponde) e archivio recensioni per "Più recensiti"
       - uses: actions/cache@v4
         with:
-          path: fresh-cache.json
-          key: fresh-${{ github.run_id }}
-          restore-keys: fresh-
+          path: |
+            fresh-cache.json
+            reviews-db.json
+          key: cache-${{ github.run_id }}
+          restore-keys: cache-
       - run: node digest.mjs
       - run: mkdir -p _site && cp lato-b.html _site/index.html
       - uses: actions/upload-pages-artifact@v3
