@@ -75,6 +75,24 @@
       "kind": "brani"
     },
     {
+      "name": "The Line of Best Fit",
+      "lang": "en",
+      "url": "https://www.thelineofbestfit.com/feed",
+      "kind": "auto"
+    },
+    {
+      "name": "Treble",
+      "lang": "en",
+      "url": "https://www.treblezine.com/feed/",
+      "kind": "auto"
+    },
+    {
+      "name": "The Arts Desk",
+      "lang": "en",
+      "url": "https://theartsdesk.com/taxonomy/term/5/feed",
+      "kind": "dischi"
+    },
+    {
       "name": "Stereogum",
       "lang": "en",
       "url": "https://www.stereogum.com/feed/",

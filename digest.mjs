@@ -77,7 +77,7 @@ const blocked = it => genreRe.test(it.title + ' | ' + it.cats.join(' | ')) || ar
 
 // ---------- classificazione ----------
 const RE = {
-  dischi: /\b(reviews?|recension[ei]|chroniques?|album of the week|disques?|reviewed|disco della settimana|best new music)\b/i,
+  dischi: /\b(reviews?|recension[ei]|chroniques?|album of the week|albums|disques?|reviewed|disco della settimana|best new music)\b/i,
   brani: /\b(ascolta|guarda|anteprima|premiere|video|clip|vidéos?|track|tracks|song|songs|single|singolo|brano|listen|watch|shares|new music|morceau|titre inédit)\b/i,
   notizie: /\b(news|notizie|brevi|infos?|announces?|annuncia|tour|reissue|ristampa|festival|dies|morto|morta|lineup)\b/i,
 };
@@ -88,7 +88,7 @@ function classify(it, feed) {
   if (feed.kind === 'dischi' || feed.kind === 'brani') return feed.kind;
   if (feed.kind === 'approfondimenti') return 'approfondimenti';
   if (feed.kind === 'notizie') return songTitle ? 'brani' : 'notizie';
-  if (RE.dischi.test(cats) || linkHint) return 'dischi';
+  if (RE.dischi.test(cats) || linkHint || /\breview\b/i.test(it.title)) return 'dischi';
   if (RE.brani.test(cats) || songTitle) return 'brani';
   if (RE.notizie.test(cats)) return 'notizie';
   if (feed.name === 'OndaRock' && / - /.test(it.title)) return 'dischi'; // "Artista - Titolo" = recensione
