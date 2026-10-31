@@ -298,17 +298,24 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-off
 .mast{display:grid;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:18px}
 .mast h1{font:900 clamp(64px,14vw,132px)/.82 var(--display);letter-spacing:-.01em;margin:0;text-transform:uppercase}
 .mast h1 span{color:var(--accent)}
+.mast h1:focus{outline:none}
 .mast .tag{font:500 13px/1.4 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0}
 .stats{display:flex;flex-wrap:wrap;gap:6px 18px;font:400 13px/1.4 var(--mono);color:var(--muted);margin:0}
 .stats b{color:var(--ink);font-weight:500}
-nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
-nav.toc a{font:600 13px/1 var(--body);text-decoration:none;padding:8px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--chip)}
+/* indice fisso in alto: una riga sola, scorrevole in orizzontale sul telefono */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--paper)}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;gap:8px;margin:18px 0 6px;padding-block:10px;background:var(--paper);border-bottom:1px solid var(--rule);overflow-x:auto;scrollbar-width:none}
+nav.toc::-webkit-scrollbar{display:none}
+nav.toc a{flex:none;font:600 13px/1 var(--body);text-decoration:none;padding:8px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--chip)}
 nav.toc a:hover{border-color:var(--ink)}
+nav.toc a[aria-current="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.totop{position:fixed;z-index:6;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));font:600 13px/1 var(--body);color:var(--paper);background:var(--accent);border:0;border-radius:999px;padding:12px 16px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.totop:hover{filter:brightness(1.1)}
 .filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0;font:400 12px/1 var(--mono);color:var(--muted)}
 .filters button{font:500 12px/1 var(--mono);color:var(--ink);background:transparent;border:1px solid var(--rule);border-radius:4px;padding:6px 8px;cursor:pointer}
 .filters button[aria-pressed="false"]{color:var(--muted);text-decoration:line-through;opacity:.6}
 .filters button.only[aria-pressed="true"]{background:var(--hot);border-color:var(--hot);color:var(--paper)}
-.sec{margin-top:44px}
+.sec{margin-top:44px;scroll-margin-top:calc(64px + env(safe-area-inset-top,0px))}
 .sh{display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;gap:4px 12px;border-bottom:1px solid var(--ink);padding-bottom:8px}
 .sh h2{font:900 40px/1 var(--display);text-transform:uppercase;margin:0;text-wrap:balance}
 .sh .count{font:500 14px/1 var(--mono);color:var(--accent)}
@@ -361,7 +368,7 @@ footer .ko{color:var(--hot)}
 <div class="wrap">
 <header class="mast">
   <p class="tag">Digest musicale personale · aggiornato ogni 4 ore</p>
-  <h1>Lato <span>B</span></h1>
+  <h1 tabindex="-1">Lato <span>B</span></h1>
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + fresh.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 <nav class="toc" aria-label="Sezioni">${SECTIONS.map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
@@ -373,6 +380,7 @@ ${SECTIONS.map(section).join('\n')}
   <p>Esclusi in automatico metal e grandi nomi mainstream (lista modificabile in config.json). Finestra: ${cfg.windowHours} ore per notizie e brani, ${cfg.windowHours * 2 / 24} giorni per le recensioni.</p>
 </footer>
 </div>
+<button type="button" class="totop" id="totop" hidden aria-label="Torna all'inizio della pagina">↑ inizio</button>
 <script>
 (function(){
   var KEY='latob-filters', off={}, onlyNew=false;
@@ -388,6 +396,17 @@ ${SECTIONS.map(section).join('\n')}
   btns.forEach(function(b){b.addEventListener('click',function(){off[b.dataset.src]=!off[b.dataset.src];if(!off[b.dataset.src])delete off[b.dataset.src];apply()})});
   nb.addEventListener('click',function(){onlyNew=!onlyNew;apply()});
   apply();
+
+  // pulsante "torna all'inizio" e sezione corrente evidenziata nell'indice
+  var top=document.getElementById('totop'), links=document.querySelectorAll('nav.toc a');
+  function onScroll(){top.hidden=window.scrollY<600}
+  window.addEventListener('scroll',onScroll,{passive:true});onScroll();
+  top.addEventListener('click',function(){window.scrollTo({top:0});document.querySelector('.mast h1').focus({preventScroll:true})});
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;
+      links.forEach(function(a){var on=a.getAttribute('href')==='#'+e.target.id;a.setAttribute('aria-current',on?'true':'false');if(on&&a.scrollIntoView)a.parentNode.scrollTo({left:a.offsetLeft-16})})})},{rootMargin:'-30% 0px -65% 0px'});
+    document.querySelectorAll('.sec').forEach(function(s){io.observe(s)});
+  }
 })();
 </script>
 `;
