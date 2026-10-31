@@ -2,7 +2,7 @@ name: Aggiorna Lato B
 
 on:
   schedule:
-    - cron: "0 5,17 * * *"   # 07:00 e 19:00 ora italiana (estate); 06:00 e 18:00 d'inverno
+    - cron: "0 2-22/4 * * *"  # ogni 4 ore: 3, 7, 11, 15, 19, 23 ora italiana d'inverno (4, 8, 12, 16, 20, 24 d'estate)
   workflow_dispatch:          # pulsante "Run workflow" per aggiornare a mano
   push:
     branches: [main]

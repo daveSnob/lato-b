@@ -360,7 +360,7 @@ footer .ko{color:var(--hot)}
 </style>
 <div class="wrap">
 <header class="mast">
-  <p class="tag">Digest musicale personale · aggiornato ogni 12 ore</p>
+  <p class="tag">Digest musicale personale · aggiornato ogni 4 ore</p>
   <h1>Lato <span>B</span></h1>
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + fresh.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
