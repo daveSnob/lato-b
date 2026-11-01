@@ -211,6 +211,22 @@
     "https://www.reddit.com/r/indieheads/new/.rss?limit=100",
     "https://www.reddit.com/r/indieheads/search.rss?q=flair%3AFresh&restrict_sr=1&sort=new&limit=100"
   ],
+  "concerts": [
+    {
+      "name": "KEXP",
+      "id": "UC3I2GFN_F8WudD_2jUZbojA",
+      "match": "Full Performance",
+      "search": "full performance"
+    },
+    {
+      "name": "NPR Tiny Desk",
+      "id": "UC4eYXhJI4-7wSWc8UNRwD4A",
+      "match": "Tiny Desk Concert",
+      "search": "tiny desk concert"
+    }
+  ],
+  "concertDays": 60,
+  "concertPerSource": 12,
   "blockGenres": [
     "metal",
     "metalcore",

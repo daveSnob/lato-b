@@ -24,12 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # ultimi [FRESH] (se Reddit non risponde) e archivio recensioni per "Più recensiti"
+      # ultimi [FRESH] (se Reddit non risponde), archivio recensioni per "Più recensiti" e concerti YouTube visti
       - uses: actions/cache@v4
         with:
           path: |
             fresh-cache.json
             reviews-db.json
+            concerts-cache.json
           key: cache-${{ github.run_id }}
           restore-keys: cache-
       - run: node digest.mjs

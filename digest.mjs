@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(await readFile(join(DIR, 'config.json'), 'utf8'));
-const blowup = JSON.parse(await readFile(join(DIR, 'blowup.json'), 'utf8'));
 const NOW = Date.now();
 const H = 3600e3;
 const UA = 'Mozilla/5.0 (LatoB RSS digest)';
@@ -203,6 +202,52 @@ for (const r of reviews.filter(r => albumKey(r)).sort((a, b) => b.ts - a.ts)) {
 }
 consensus.sort((a, b) => b.list.length - a.list.length || b.last - a.last);
 
+// ---------- YouTube concert: KEXP (Full Performance) e NPR Tiny Desk ----------
+// Il feed di un canale dà solo gli ultimi 15 video (KEXP ne pubblica ~6 per sessione), quindi i concerti visti
+// si conservano in concerts-cache.json; se la cache è scarsa si usa anche la ricerca nel canale (data approssimata).
+const CONC_CACHE = join(DIR, 'concerts-cache.json');
+const concWin = (cfg.concertDays || 60) * 24 * H;
+let concerts = {};
+try { concerts = JSON.parse(await readFile(CONC_CACHE, 'utf8')); } catch {}
+const ytLong = id => `https://www.youtube.com/feeds/videos.xml?playlist_id=UULF${id.slice(2)}`; // solo video lunghi, niente Shorts
+const REL = { s: 1 / 3600, m: 1 / 60, min: 1 / 60, h: 1, d: 24, w: 168, mo: 720, y: 8760 };
+const relTs = t => { const m = (t || '').match(/(\d+)\s*(mo|min|[smhdwy])\w*\s+ago/i); return m ? NOW - Number(m[1]) * REL[m[2].toLowerCase()] * H : 0; };
+async function ytSearch(id, q) {
+  const r = await fetch(`https://www.youtube.com/channel/${id}/search?query=${encodeURIComponent(q)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' }, signal: AbortSignal.timeout(25000) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const m = (await r.text()).match(/var ytInitialData = (\{[\s\S]*?\});<\/script>/);
+  if (!m) throw new Error('pagina senza dati');
+  const out = [];
+  (function walk(o) { if (!o || typeof o !== 'object') return; if (o.videoRenderer) { const v = o.videoRenderer; out.push({ vid: v.videoId, title: v.title?.runs?.[0]?.text || '', ts: relTs(v.publishedTimeText?.simpleText) }); } for (const k in o) walk(o[k]); })(JSON.parse(m[1]));
+  return out;
+}
+await Promise.all((cfg.concerts || []).map(async c => {
+  const want = t => t.toLowerCase().includes(c.match.toLowerCase()) && !blocked({ title: t, cats: [] });
+  const add = (vid, title, ts, approx) => {
+    const prev = concerts[vid];
+    // la data esatta del feed vince su quella approssimata della ricerca; una data approssimata già salvata non si sposta
+    if (prev && (!prev.approx || approx)) return;
+    concerts[vid] = approx ? { src: c.name, vid, title, ts, approx: true } : { src: c.name, vid, title, ts };
+  };
+  let n = 0;
+  try {
+    for (const it of parseFeed(await get(ytLong(c.id)))) {
+      const vid = (it.link.match(/[?&]v=([\w-]{11})/) || [])[1];
+      if (vid && want(it.title)) { add(vid, it.title, it.ts || NOW, false); n++; }
+    }
+    status.push({ name: c.name + ' (YouTube)', ok: true, n });
+  } catch (e) { status.push({ name: c.name + ' (YouTube)', ok: false, err: String(e.message || e) }); }
+  const have = Object.values(concerts).filter(x => x.src === c.name && NOW - x.ts < concWin).length;
+  if (have < (cfg.concertPerSource || 12) && c.search) {
+    try { for (const v of await ytSearch(c.id, c.search)) if (v.vid && v.ts && want(v.title)) add(v.vid, v.title, v.ts, true); }
+    catch (e) { status.push({ name: c.name + ' (ricerca YouTube)', ok: false, err: String(e.message || e) }); }
+  }
+}));
+for (const [vid, x] of Object.entries(concerts)) if (NOW - x.ts > concWin) delete concerts[vid];
+await writeFile(CONC_CACHE, JSON.stringify(concerts));
+const concertsBy = Object.fromEntries((cfg.concerts || []).map(c => [c.name,
+  Object.values(concerts).filter(x => x.src === c.name).sort((a, b) => b.ts - a.ts).slice(0, cfg.concertPerSource || 12)]));
+
 items.sort((a, b) => b.ts - a.ts);
 fresh.sort((a, b) => b.ts - a.ts);
 
@@ -219,10 +264,10 @@ const SECTIONS = [
   { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
   { id: 'dischi', title: 'Dischi', sub: `Recensioni e uscite, ultimi ${cfg.windowHours * 2 / 24} giorni` },
   { id: 'brani', title: 'Brani e video', sub: 'Singoli, anteprime, clip' },
+  { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
   { id: 'fresh', title: 'Fresh su r/indieheads', sub: 'Post taggati [FRESH], [FRESH ALBUM], [FRESH EP]…' },
   { id: 'notizie', title: 'Notizie', sub: 'Annunci, tour, ristampe' },
   { id: 'approfondimenti', title: 'Approfondimenti', sub: 'Interviste, speciali, rubriche' },
-  { id: 'blowup', title: 'Blow Up', sub: blowup.issue },
 ];
 
 function row(it) {
@@ -239,6 +284,14 @@ function freshRow(f) {
   <span class="ft">${label}</span>
   <span class="links">${f.ext ? `<a href="${h(f.ext)}" target="_blank" rel="noopener">ascolta</a>` : ''}<a href="${h(f.thread)}" target="_blank" rel="noopener">thread</a>${f.ts ? `<time>${h(fmt.format(f.ts))}</time>` : ''}</span>
 </li>`;
+}
+// "Russian Circles - Full Performance (Live on KEXP)" / "CMAT: Tiny Desk Concert" -> artista + etichetta
+function concertCard(c) {
+  const artist = c.title.replace(/\s*[-–—:|]\s*(Full Performance.*|Tiny Desk Concert.*)$/i, '').replace(/\s*\(Live on KEXP\)\s*$/i, '').trim() || c.title;
+  const label = c.src === 'KEXP' ? 'Full Performance · Live on KEXP' : 'Tiny Desk Concert';
+  const thumb = IMAGES ? `<img src="https://i.ytimg.com/vi/${h(c.vid)}/hqdefault.jpg" alt="" loading="lazy" width="480" height="360">` : '<span class="ph" aria-hidden="true">▶</span>';
+  const when = c.approx ? `<span title="data approssimativa">≈ ${h(fmtDay.format(c.ts))}</span>` : `<time>${h(fmt.format(c.ts))}</time>`;
+  return `<li class="card"${isNew(c.ts) ? ' data-new' : ''}><a href="https://www.youtube.com/watch?v=${h(c.vid)}" target="_blank" rel="noopener"><span class="thumb">${thumb}${isNew(c.ts) ? '<span class="pill solid">nuovo</span>' : ''}</span><span class="ct">${h(artist)}</span></a><span class="cm">${h(label)} · ${when}</span></li>`;
 }
 function section(s) {
   let inner, count;
@@ -259,9 +312,14 @@ function section(s) {
   <p class="revs">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a><time>${h(fmtDay.format(o.ts))}</time>`).join('<span aria-hidden="true">·</span>')}</p></div>
 </li>`).join('')}</ol>`
       : `<p class="empty">Nessun album recensito da più riviste per ora. L'archivio si riempie a ogni aggiornamento: in pochi giorni compariranno i primi.</p>`;
-  } else if (s.id === 'blowup') {
-    count = blowup.items.length;
-    inner = `<ul class="bu">${blowup.items.map(b => `<li><a href="${h(b.url)}" target="_blank" rel="noopener">${h(b.title)}</a><span class="tag">${h(b.tag)}</span></li>`).join('')}</ul><p class="note">${h(blowup.note)}</p>`;
+  } else if (s.id === 'concerti') {
+    const groups = Object.entries(concertsBy);
+    count = groups.reduce((n, [, l]) => n + l.length, 0);
+    inner = count ? `<div class="tabs" role="tablist" aria-label="Canale">
+${groups.map(([name, l], i) => `  <button type="button" role="tab" data-tab="c-${slug(name)}" aria-selected="${i ? 'false' : 'true'}">${h(name)} <span class="n">${l.length}</span></button>`).join('\n')}
+</div>
+${groups.map(([name, l], i) => `<div id="c-${slug(name)}" class="tp"${i ? ' hidden' : ''}>${l.length ? `<ul class="cards">${l.map(concertCard).join('')}</ul>` : '<p class="empty">Nessun concerto in questa finestra.</p>'}</div>`).join('\n')}`
+      : '<p class="empty">YouTube non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>';
   } else {
     const list = items.filter(i => i.section === s.id);
     count = list.length;
@@ -277,7 +335,8 @@ const sources = [...new Set(items.map(i => i.src))].sort();
 const newCount = items.filter(i => isNew(i.ts)).length + fresh.filter(f => isNew(f.ts)).length;
 const failed = status.filter(s => !s.ok);
 
-const page = `<title>Lato B</title>
+let IMAGES = true;
+const page = () => `<title>Lato B</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -349,10 +408,21 @@ ul{list-style:none;margin:0;padding:0}
 .revs a{color:var(--accent);font-weight:500}
 .revs time{margin-left:4px}
 .links a{color:var(--accent)}
-.bu li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--rule)}
-.bu a{font-weight:600;text-decoration:none}
-.bu a:hover{text-decoration:underline}
-.bu .tag{font:400 12px/1.6 var(--mono);color:var(--muted);white-space:nowrap}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 14px}
+.tabs button{font:600 14px/1 var(--body);color:var(--ink);background:var(--chip);border:1px solid var(--rule);border-radius:999px;padding:9px 14px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.tabs .n{margin-left:4px}
+.tabs button[aria-selected="true"] .n{color:inherit;opacity:.75}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px 18px}
+.card{min-width:0}
+.card a{text-decoration:none;display:grid;gap:8px}
+.thumb{position:relative;display:block;aspect-ratio:16/9;overflow:hidden;border-radius:4px;background:var(--chip)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ph{position:absolute;inset:0;display:grid;place-items:center;font-size:28px;color:var(--accent)}
+.pill.solid{position:absolute;top:8px;left:8px;background:var(--hot);border-color:var(--hot);color:#fff}
+.ct{font-weight:600;font-size:16px;line-height:1.3;text-wrap:pretty}
+.card a:hover .ct{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+.cm{display:block;margin-top:4px;font:400 12px/1.5 var(--mono);color:var(--muted)}
 .note,.empty{color:var(--muted);font-size:13px}
 footer{margin-top:56px;padding-top:14px;border-top:3px solid var(--ink);font:400 12px/1.6 var(--mono);color:var(--muted)}
 footer ul{display:flex;flex-wrap:wrap;gap:4px 14px}
@@ -397,6 +467,17 @@ ${SECTIONS.map(section).join('\n')}
   nb.addEventListener('click',function(){onlyNew=!onlyNew;apply()});
   apply();
 
+  // schede di "YouTube concert" (KEXP / NPR Tiny Desk), ricordate tra una visita e l'altra
+  var TK='latob-concerti', tabs=document.querySelectorAll('.tabs button[data-tab]'), cur=null;
+  try{cur=localStorage.getItem(TK)}catch(e){}
+  function showTab(id){
+    if(!document.getElementById(id)&&tabs.length)id=tabs[0].dataset.tab;
+    tabs.forEach(function(b){var on=b.dataset.tab===id;b.setAttribute('aria-selected',on?'true':'false');document.getElementById(b.dataset.tab).hidden=!on});
+    try{localStorage.setItem(TK,id)}catch(e){}
+  }
+  tabs.forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
+  if(tabs.length)showTab(cur);
+
   // pulsante "torna all'inizio" e sezione corrente evidenziata nell'indice
   var top=document.getElementById('totop'), links=document.querySelectorAll('nav.toc a');
   function onScroll(){top.hidden=window.scrollY<600}
@@ -411,6 +492,9 @@ ${SECTIONS.map(section).join('\n')}
 </script>
 `;
 
-await writeFile(join(DIR, 'artifact.html'), page);
-await writeFile(join(DIR, 'lato-b.html'), `<!doctype html>\n<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${page.replace('</style>', '</style></head><body>')}</body></html>\n`);
+// l'artifact di Claude non carica immagini remote: lì le anteprime dei concerti diventano un segnaposto
+IMAGES = false;
+await writeFile(join(DIR, 'artifact.html'), page());
+IMAGES = true;
+await writeFile(join(DIR, 'lato-b.html'), `<!doctype html>\n<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${page().replace('</style>', '</style></head><body>')}</body></html>\n`);
 console.log(JSON.stringify({ items: items.length, bySection: Object.fromEntries(['dischi', 'brani', 'notizie', 'approfondimenti'].map(k => [k, items.filter(i => i.section === k).length])), fresh: fresh.length, status }, null, 1));
