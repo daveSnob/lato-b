@@ -5,3 +5,4 @@ ultimo-aggiornamento.log
 _site/
 .claude/
 reviews-db.json
+concerts-cache.json
