@@ -354,6 +354,8 @@ const page = () => `<title>Lato B</title>
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}}
 :root[data-theme="dark"]{--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}
 body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--body)}
+/* indispensabile per i filtri: senza, display:grid di .it/.fr/.ca vince sull'attributo hidden e le voci restano visibili */
+[hidden]{display:none!important}
 .wrap{max-width:980px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 a{color:inherit}
 a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
