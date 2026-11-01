@@ -279,7 +279,7 @@ function row(it) {
 function freshRow(f) {
   const [artist, ...rest] = f.title.split(/\s+[-–—]\s+/);
   const label = rest.length ? `<b>${h(artist)}</b> – ${h(rest.join(' – '))}` : `<b>${h(f.title)}</b>`;
-  return `<li class="fr"${isNew(f.ts) ? ' data-new' : ''}>
+  return `<li class="fr" data-src="r-indieheads"${isNew(f.ts) ? ' data-new' : ''}>
   <span class="kind">${h(f.kind.replace('FRESH', '').trim() || 'TRACK')}</span>
   <span class="ft">${label}</span>
   <span class="links">${f.ext ? `<a href="${h(f.ext)}" target="_blank" rel="noopener">ascolta</a>` : ''}<a href="${h(f.thread)}" target="_blank" rel="noopener">thread</a>${f.ts ? `<time>${h(fmt.format(f.ts))}</time>` : ''}</span>
@@ -291,7 +291,7 @@ function concertCard(c) {
   const label = c.src === 'KEXP' ? 'Full Performance · Live on KEXP' : 'Tiny Desk Concert';
   const thumb = IMAGES ? `<img src="https://i.ytimg.com/vi/${h(c.vid)}/hqdefault.jpg" alt="" loading="lazy" width="480" height="360">` : '<span class="ph" aria-hidden="true">▶</span>';
   const when = c.approx ? `<span title="data approssimativa">≈ ${h(fmtDay.format(c.ts))}</span>` : `<time>${h(fmt.format(c.ts))}</time>`;
-  return `<li class="card"${isNew(c.ts) ? ' data-new' : ''}><a href="https://www.youtube.com/watch?v=${h(c.vid)}" target="_blank" rel="noopener"><span class="thumb">${thumb}${isNew(c.ts) ? '<span class="pill solid">nuovo</span>' : ''}</span><span class="ct">${h(artist)}</span></a><span class="cm">${h(label)} · ${when}</span></li>`;
+  return `<li class="card" data-src="${h(slug(c.src))}"${isNew(c.ts) ? ' data-new' : ''}><a href="https://www.youtube.com/watch?v=${h(c.vid)}" target="_blank" rel="noopener"><span class="thumb">${thumb}${isNew(c.ts) ? '<span class="pill solid">nuovo</span>' : ''}</span><span class="ct">${h(artist)}</span></a><span class="cm">${h(label)} · ${when}</span></li>`;
 }
 function section(s) {
   let inner, count;
@@ -306,7 +306,8 @@ function section(s) {
 </div>` : '<p class="empty">Reddit non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>');
   } else if (s.id === 'piu-recensiti') {
     count = consensus.length;
-    inner = count ? `<ol class="cons">${consensus.map(c => `<li class="ca">
+    // data-src elenca tutte le riviste che hanno recensito l'album: il filtro lo mostra se una di queste è scelta
+    inner = count ? `<ol class="cons">${consensus.map(c => `<li class="ca" data-src="${h([...new Set(c.list.map(o => slug(o.src)))].join(' '))}">
   <div class="cn" aria-label="${c.list.length} recensioni">${c.list.length}</div>
   <div class="body"><p class="cat"><b>${h(c.artist)}</b> – ${h(c.album)}</p>${c.ex ? `<p class="ex">${h(c.ex)}</p>` : ''}
   <p class="revs">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a><time>${h(fmtDay.format(o.ts))}</time>`).join('<span aria-hidden="true">·</span>')}</p></div>
@@ -331,7 +332,9 @@ ${inner}
 </section>`;
 }
 
-const sources = [...new Set(items.map(i => i.src))].sort();
+// fonti selezionabili nel filtro: riviste, più r/indieheads e i canali dei concerti se hanno voci
+const sources = [...new Set([...items.map(i => i.src), ...(fresh.length ? ['r/indieheads'] : []), ...Object.keys(concertsBy).filter(k => concertsBy[k].length)])]
+  .sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
 const newCount = items.filter(i => isNew(i.ts)).length + fresh.filter(f => isNew(f.ts)).length;
 const failed = status.filter(s => !s.ok);
 
@@ -372,8 +375,12 @@ nav.toc a[aria-current="true"]{background:var(--ink);border-color:var(--ink);col
 .totop:hover{filter:brightness(1.1)}
 .filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0;font:400 12px/1 var(--mono);color:var(--muted)}
 .filters button{font:500 12px/1 var(--mono);color:var(--ink);background:transparent;border:1px solid var(--rule);border-radius:4px;padding:6px 8px;cursor:pointer}
-.filters button[aria-pressed="false"]{color:var(--muted);text-decoration:line-through;opacity:.6}
+/* filtro "mostra solo": le fonti selezionate sono piene; con nessuna selezionata si vede tutto */
+.filters button:hover{border-color:var(--ink)}
+.filters button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .filters button.only[aria-pressed="true"]{background:var(--hot);border-color:var(--hot);color:var(--paper)}
+.filters button.reset{border-style:dashed;color:var(--accent)}
+.fnote{margin:14px 0 0;font:400 13px/1.4 var(--mono);color:var(--muted)}
 .sec{margin-top:44px;scroll-margin-top:calc(64px + env(safe-area-inset-top,0px))}
 .sh{display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;gap:4px 12px;border-bottom:1px solid var(--ink);padding-bottom:8px}
 .sh h2{font:900 40px/1 var(--display);text-transform:uppercase;margin:0;text-wrap:balance}
@@ -442,7 +449,8 @@ footer .ko{color:var(--hot)}
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + fresh.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 <nav class="toc" aria-label="Sezioni">${SECTIONS.map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
-<div class="filters" role="group" aria-label="Filtra per fonte"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="true">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button></div>
+<div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Mostra solo:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div>
+<p class="fnote" id="fnote" hidden></p>
 ${SECTIONS.map(section).join('\n')}
 <footer>
   <p>Fonti: ${status.filter(s => s.ok).map(s => `${h(s.name)} (${s.n})`).join(' · ')}</p>
@@ -453,30 +461,55 @@ ${SECTIONS.map(section).join('\n')}
 <button type="button" class="totop" id="totop" hidden aria-label="Torna all'inizio della pagina">↑ inizio</button>
 <script>
 (function(){
-  var KEY='latob-filters', off={}, onlyNew=false;
-  try{var s=JSON.parse(localStorage.getItem(KEY)||'{}');off=s.off||{};onlyNew=!!s.onlyNew}catch(e){}
-  var btns=document.querySelectorAll('.filters button[data-src]'), nb=document.getElementById('f-onlynew');
-  function apply(){
-    btns.forEach(function(b){b.setAttribute('aria-pressed',off[b.dataset.src]?'false':'true')});
-    nb.setAttribute('aria-pressed',onlyNew?'true':'false');
-    document.querySelectorAll('.it').forEach(function(li){li.hidden=!!off[li.dataset.src]||(onlyNew&&!li.hasAttribute('data-new'))});
-    document.querySelectorAll('.fr').forEach(function(li){li.hidden=onlyNew&&!li.hasAttribute('data-new')});
-    try{localStorage.setItem(KEY,JSON.stringify({off:off,onlyNew:onlyNew}))}catch(e){}
-  }
-  btns.forEach(function(b){b.addEventListener('click',function(){off[b.dataset.src]=!off[b.dataset.src];if(!off[b.dataset.src])delete off[b.dataset.src];apply()})});
-  nb.addEventListener('click',function(){onlyNew=!onlyNew;apply()});
-  apply();
-
   // schede di "YouTube concert" (KEXP / NPR Tiny Desk), ricordate tra una visita e l'altra
   var TK='latob-concerti', tabs=document.querySelectorAll('.tabs button[data-tab]'), cur=null;
   try{cur=localStorage.getItem(TK)}catch(e){}
-  function showTab(id){
+  function showTab(id,keep){
     if(!document.getElementById(id)&&tabs.length)id=tabs[0].dataset.tab;
     tabs.forEach(function(b){var on=b.dataset.tab===id;b.setAttribute('aria-selected',on?'true':'false');document.getElementById(b.dataset.tab).hidden=!on});
-    try{localStorage.setItem(TK,id)}catch(e){}
+    if(!keep)try{localStorage.setItem(TK,id)}catch(e){}
   }
   tabs.forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
   if(tabs.length)showTab(cur);
+
+  // filtro "mostra solo": sel = fonti scelte (vuoto = tutte). Una voce può avere più fonti (album "Più recensiti").
+  // Con un filtro attivo spariscono le sezioni rimaste vuote, con la loro voce nell'indice.
+  var KEY='latob-filters', sel={}, onlyNew=false, ITEMS='.it,.fr,.card,.ca';
+  try{var s=JSON.parse(localStorage.getItem(KEY)||'{}');sel=s.sel||{};onlyNew=!!s.onlyNew}catch(e){}
+  var btns=document.querySelectorAll('.filters button[data-src]'), nb=document.getElementById('f-onlynew'), all=document.getElementById('f-all'), note=document.getElementById('fnote');
+  for(var k in sel)if(!document.querySelector('.filters button[data-src="'+k+'"]'))delete sel[k]; // fonte non più presente
+  btns.forEach(function(b){if(sel[b.dataset.src])sel[b.dataset.src]=b.textContent});
+  var visible=function(li){return !li.hidden};
+  function apply(){
+    var picked=Object.keys(sel), filtering=picked.length>0||onlyNew;
+    btns.forEach(function(b){b.setAttribute('aria-pressed',sel[b.dataset.src]?'true':'false')});
+    nb.setAttribute('aria-pressed',onlyNew?'true':'false');
+    all.hidden=!picked.length;
+    document.querySelectorAll(ITEMS).forEach(function(li){
+      var srcs=(li.dataset.src||'').split(' ');
+      var bySrc=picked.length&&!srcs.some(function(x){return sel[x]});
+      var byNew=onlyNew&&!li.classList.contains('ca')&&!li.hasAttribute('data-new'); // "Più recensiti" non ha data di novità
+      li.hidden=!!(bySrc||byNew);
+    });
+    // se la scheda concerti aperta è rimasta vuota, si passa alla prima che ha voci (senza cambiare quella ricordata)
+    var open=[].filter.call(tabs,function(b){return b.getAttribute('aria-selected')==='true'})[0];
+    if(open&&![].some.call(document.getElementById(open.dataset.tab).querySelectorAll(ITEMS),visible)){
+      var alt=[].filter.call(tabs,function(b){return [].some.call(document.getElementById(b.dataset.tab).querySelectorAll(ITEMS),visible)})[0];
+      if(alt)showTab(alt.dataset.tab,true);
+    }
+    document.querySelectorAll('section.sec').forEach(function(sec){
+      var show=!filtering||[].some.call(sec.querySelectorAll(ITEMS),visible);
+      sec.hidden=!show;
+      var a=document.querySelector('nav.toc a[href="#'+sec.id+'"]'); if(a)a.hidden=!show;
+    });
+    note.hidden=!picked.length;
+    if(picked.length)note.textContent='Mostro solo '+picked.map(function(k){return sel[k]}).join(', ')+(onlyNew?' · solo nuovi':'')+': '+document.querySelectorAll('.it:not([hidden]),.fr:not([hidden]),.card:not([hidden]),.ca:not([hidden])').length+' voci. Tocca di nuovo una fonte per toglierla, o «tutte le fonti».';
+    try{localStorage.setItem(KEY,JSON.stringify({sel:sel,onlyNew:onlyNew}))}catch(e){}
+  }
+  btns.forEach(function(b){b.addEventListener('click',function(){if(sel[b.dataset.src])delete sel[b.dataset.src];else sel[b.dataset.src]=b.textContent;apply()})});
+  nb.addEventListener('click',function(){onlyNew=!onlyNew;apply()});
+  all.addEventListener('click',function(){sel={};apply()});
+  apply();
 
   // pulsante "torna all'inizio" e sezione corrente evidenziata nell'indice
   var top=document.getElementById('totop'), links=document.querySelectorAll('nav.toc a');
