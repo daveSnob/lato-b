@@ -1,0 +1,33 @@
+name: Orologio (aggiornamento ogni ora)
+
+# Perché esiste: le esecuzioni "schedule" di GitHub sono best effort. Sotto carico vengono ritardate o saltate,
+# e quelle orarie più spesso di tutte: con il solo cron "17 * * * *" di digest.yml partivano 4 aggiornamenti al giorno.
+# Questo workflow parte ogni 3 ore e resta acceso: ogni ora avvia "Aggiorna Lato B" con workflow_dispatch,
+# che GitHub esegue sempre (è l'unico evento che il GITHUB_TOKEN può far partire). Il cron di digest.yml resta come riserva.
+on:
+  schedule:
+    - cron: "41 */3 * * *"   # ogni 3 ore: ogni giro dura ~5 ore e sostituisce il precedente, così i ritardi di GitHub non lasciano buchi
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: orologio
+  cancel-in-progress: true   # un nuovo orologio sostituisce quello vecchio, così non se ne accumulano due
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Avvia l'aggiornamento subito e poi ogni ora, per circa 6 ore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            gh workflow run digest.yml --ref main && echo "aggiornamento avviato alle $(date -u +%H:%M) UTC"
+            if [ "$i" -lt 6 ]; then sleep 3540; fi
+          done
