@@ -164,11 +164,18 @@ const CACHE = join(DIR, 'fresh-cache.json');
 let freshStale = 0;
 if (redditOk && fresh.length) await writeFile(CACHE, JSON.stringify({ at: NOW, fresh }));
 else {
+  // Reddit blocca gli IP dei server GitHub: il PC di casa pubblica i suoi [FRESH] sul ramo "reddit" (vedi push-reddit.mjs)
+  let c = null;
+  try { c = JSON.parse(await readFile(CACHE, 'utf8')); } catch {}
   try {
-    const c = JSON.parse(await readFile(CACHE, 'utf8'));
-    fresh.push(...c.fresh.filter(f => NOW - f.ts < cfg.windowHours * H));
-    freshStale = c.at;
+    const r = JSON.parse(await get(cfg.redditMirror, false));
+    if (r && r.fresh && (!c || r.at > c.at)) c = r;
   } catch {}
+  if (c) {
+    fresh.push(...c.fresh.filter(f => NOW - f.ts < cfg.windowHours * H));
+    // copia del PC di casa recente (meno di 13 ore, il suo ritmo): non è un errore
+    if (NOW - c.at < 13 * H) { redditOk = true; redditErr = ''; } else freshStale = c.at;
+  }
 }
 status.push(redditOk && !freshStale ? { name: 'r/indieheads', ok: true, n: fresh.length } : { name: 'r/indieheads', ok: false, err: (redditErr || 'nessun post') + (freshStale ? ' (uso la copia precedente)' : '') });
 
@@ -181,7 +188,7 @@ const norm = s => ' ' + s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 const unquote = s => s.replace(/^[\s‘'"“«]+|[\s’'"”»]+$/g, '').replace(/\s*[([].*?[)\]]\s*/g, ' ').trim();
 // artista e album dai titoli strutturati: "Artista – Album", "Artista : Album", "Album by Artista", slug di Pitchfork
 function albumKey(r) {
-  const t = r.title.replace(/^(album of the week|album review|ep review|review)\s*:\s*/i, '').replace(/\s+(ep\s+)?review$/i, '');
+  const t = r.title.replace(/^(album of the week|album review|ep review|review|first listen)\s*:\s*/i, '').replace(/\s+(ep\s+)?review$/i, '');
   let m = t.match(/^(.+?)\s+[-–—:]\s+(.+)$/);
   // "Album (2026) Etichetta" (Distorsioni): via anno ed etichetta
   if (m && !/\breview\b/i.test(t)) return { artist: unquote(m[1]), album: unquote(m[2].replace(/\s*\((19|20)\d\d\).*$/, '').replace(/\s*\/\s*rece$/i, '')) };
