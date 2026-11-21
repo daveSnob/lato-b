@@ -274,9 +274,9 @@ const LANG = { it: 'IT', en: 'EN', fr: 'FR' };
 
 const SECTIONS = [
   { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
+  { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
   { id: 'dischi', title: 'Dischi', sub: `Recensioni e uscite, ultimi ${cfg.windowHours * 2 / 24} giorni` },
   { id: 'brani', title: 'Brani e video', sub: 'Singoli, anteprime, clip' },
-  { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
   { id: 'fresh', title: 'Fresh su r/indieheads', sub: 'Post taggati [FRESH], [FRESH ALBUM], [FRESH EP]…' },
   { id: 'notizie', title: 'Notizie', sub: 'Annunci, tour, ristampe' },
   { id: 'approfondimenti', title: 'Approfondimenti', sub: 'Interviste, speciali, rubriche' },
@@ -495,7 +495,7 @@ footer .ko{color:var(--hot)}
   <h1 tabindex="-1">Lato <span>B</span></h1>
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + fresh.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
-<nav class="toc" aria-label="Sezioni">${SECTIONS.map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
+<nav class="toc" aria-label="Sezioni">${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
 <details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
 <p class="fnote" id="fnote" hidden></p>
 <div class="content-grid"><main>${SECTIONS.filter(s => s.id !== 'notizie').map(section).join('\n')}</main><aside class="news-side" aria-label="Notizie">${section(SECTIONS.find(s => s.id === 'notizie'))}</aside></div>
