@@ -365,7 +365,7 @@ ${groups.map(([name, l], i) => `<div id="c-${slug(name)}" class="tp"${i ? ' hidd
     const list = items.filter(i => i.section === s.id);
     count = list.length;
     const newsOnly = s.id === 'notizie';
-    inner = list.length ? `<ul class="list">${newsOnly ? list.map(i => `<li class="news-title"><a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.title)}</a></li>`).join('') : list.map(row).join('')}</ul>` : '<p class="empty">Niente di nuovo in questa finestra.</p>';
+    inner = list.length ? `<ul class="list">${newsOnly ? list.map(i => `<li class="news-title"><a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.title)}</a>${i.ts ? `<time class="news-time" datetime="${new Date(i.ts).toISOString()}">${h(fmt.format(i.ts))}</time>` : ""}</li>`).join('') : list.map(row).join('')}</ul>` : '<p class="empty">Niente di nuovo in questa finestra.</p>';
   }
   return `<section id="${s.id}" class="sec">
 <header class="sh"><h2>${h(s.title)}</h2><span class="count">${count}</span><p>${h(s.sub)}</p></header>
@@ -438,6 +438,7 @@ nav.toc a[aria-current="true"]{background:var(--ink);border-color:var(--ink);col
 .news-side .news-title{padding:12px 0;border-bottom:1px solid var(--rule)}
 .news-side .news-title a{font-weight:600;font-size:16px;line-height:1.35;text-decoration:none;display:block}
 .news-side .news-title a:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+.news-side .news-time{display:block;margin-top:4px;font:400 12px/1.4 var(--mono);color:var(--muted)}
 .review-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:24px 18px;list-style:none;margin:0;padding:0}
 .review-card{display:grid;grid-template-columns:96px minmax(0,1fr);grid-template-rows:auto auto auto;gap:5px 12px;align-items:start;min-width:0;padding:14px 0;border-bottom:1px solid var(--rule)}
 .review-card a{display:contents;text-decoration:none}
