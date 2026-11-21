@@ -52,9 +52,14 @@ function parseFeed(xml) {
       .concat([...b.matchAll(/<category[^>]*term="([^"]+)"/gi)].map(m => decode(m[1])));
     const date = tag(b, 'pubDate') || tag(b, 'dc:date') || tag(b, 'published') || tag(b, 'updated');
     const rawDesc = tag(b, 'description') || tag(b, 'summary') || tag(b, 'content:encoded') || tag(b, 'content');
+    const image = (b.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*type=["']image\//i) || b.match(/<(?:media:content|media:thumbnail)[^>]+url=["']([^"']+)["']/i) || rawDesc.match(/<img[^>]+src=["']([^"']+)["']/i) || [])[1] || '';
     const pathDate = b.match(/\/(20\d\d)\/(\d\d)\/(\d\d)\//); // feed senza date (The Wire): data dal percorso immagini
     const ts = Date.parse(date) || (pathDate ? Date.parse(`${pathDate[1]}-${pathDate[2]}-${pathDate[3]}T12:00:00Z`) : 0);
-    return { title: text(tag(b, 'title')), link: decode(link.trim()), cats, ts, rawDesc };
+    let cover = decode(image);
+    const yt = cover.match(/youtube\.com\/embed\/([\w-]{11})/i);
+    if (yt) cover = `https://i.ytimg.com/vi/${yt[1]}/hqdefault.jpg`;
+    if (!/^https?:\/\//i.test(cover)) cover = '';
+    return { title: text(tag(b, 'title')), link: decode(link.trim()), cats, ts, rawDesc, image: cover };
   });
 }
 
@@ -101,6 +106,10 @@ const ARCHIVE = join(DIR, 'reviews-db.json');
 const ARCHIVE_DAYS = 45;
 let archive = {};
 try { archive = JSON.parse(await readFile(ARCHIVE, 'utf8')); } catch {}
+for (const r of Object.values(archive)) {
+  const yt = String(r.image || '').match(/youtube\.com\/embed\/([\w-]{11})/i);
+  if (yt) r.image = `https://i.ytimg.com/vi/${yt[1]}/hqdefault.jpg`;
+}
 
 const status = [];
 const seen = new Set();
@@ -115,10 +124,13 @@ await Promise.all(cfg.feeds.map(async feed => {
       const win = (section === 'dischi' ? cfg.windowHours * 2 : cfg.windowHours) * H;
       const dbg = process.env.DEBUG === feed.name;
       if (blocked(it)) { if (dbg) console.error('bloccato', it.title); continue; }
-      if (section === 'dischi' && !archive[it.link]) archive[it.link] = { src: feed.name, title: it.title, link: it.link, ts: it.ts || NOW, ex: excerpt(it.rawDesc, it.title) };
+      if (section === 'dischi') {
+        if (!archive[it.link]) archive[it.link] = { src: feed.name, title: it.title, link: it.link, ts: it.ts || NOW, ex: excerpt(it.rawDesc, it.title), image: it.image };
+        else if (it.image && !archive[it.link].image) archive[it.link].image = it.image;
+      }
       if (it.ts && NOW - it.ts > win) { if (dbg) console.error('vecchio', it.title, new Date(it.ts).toISOString(), section); continue; }
       seen.add(it.link);
-      items.push({ src: feed.name, lang: feed.lang, section, title: it.title, link: it.link, ts: it.ts, ex: excerpt(it.rawDesc, it.title) });
+      items.push({ src: feed.name, lang: feed.lang, section, title: it.title, link: it.link, ts: it.ts, ex: excerpt(it.rawDesc, it.title), image: it.image });
       n++;
     }
     status.push({ name: feed.name, url: feed.url, ok: true, n, total: parsed.length });
@@ -198,7 +210,7 @@ for (const r of reviews.filter(r => albumKey(r)).sort((a, b) => b.ts - a.ts)) {
   // il nome scritto da una rivista è più fedele di quello ricavato dallo slug di Pitchfork
   const better = list.map(o => o.src !== 'Pitchfork' && albumKey(o)).find(Boolean);
   const label = better || { artist: r.src === 'Pitchfork' ? artist.replace(/\b\w/g, c => c.toUpperCase()) : artist, album };
-  consensus.push({ artist: label.artist, album: label.album, list, last: Math.max(...list.map(o => o.ts)), ex: (list.find(o => o.ex) || {}).ex || '' });
+  consensus.push({ artist: label.artist, album: label.album, list, last: Math.max(...list.map(o => o.ts)), ex: (list.find(o => o.ex) || {}).ex || '', image: (list.find(o => o.image) || {}).image || '' });
 }
 consensus.sort((a, b) => b.list.length - a.list.length || b.last - a.last);
 
@@ -307,10 +319,13 @@ function section(s) {
   } else if (s.id === 'piu-recensiti') {
     count = consensus.length;
     // data-src elenca tutte le riviste che hanno recensito l'album: il filtro lo mostra se una di queste è scelta
-    inner = count ? `<ol class="cons">${consensus.map(c => `<li class="ca" data-src="${h([...new Set(c.list.map(o => slug(o.src)))].join(' '))}">
-  <div class="cn" aria-label="${c.list.length} recensioni">${c.list.length}</div>
-  <div class="body"><p class="cat"><b>${h(c.artist)}</b> – ${h(c.album)}</p>${c.ex ? `<p class="ex">${h(c.ex)}</p>` : ''}
-  <p class="revs">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a><time>${h(fmtDay.format(o.ts))}</time>`).join('<span aria-hidden="true">·</span>')}</p></div>
+    inner = count ? `<ol class="review-list">${consensus.map(c => `<li class="review-card ca" data-src="${h([...new Set(c.list.map(o => slug(o.src)))].join(' '))}">
+  <a href="${h((c.list.find(o => o.image) || c.list[0]).link)}" target="_blank" rel="noopener" title="${h(c.album)}">
+    <span class="cover">${c.image ? `<img src="${h(c.image)}" alt="Cover di ${h(c.album)}" loading="lazy">` : `<span class="cover-ph" aria-hidden="true">${h(c.album.slice(0, 2))}</span>`}</span>
+    <span class="review-title">${h(c.artist)} – ${h(c.album)}</span>
+  </a>
+  <span class="review-count"><b>${c.list.length}</b> recensioni</span>
+  <span class="review-meta">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a>`).join(' · ')}</span>
 </li>`).join('')}</ol>`
       : `<p class="empty">Nessun album recensito da più riviste per ora. L'archivio si riempie a ogni aggiornamento: in pochi giorni compariranno i primi.</p>`;
   } else if (s.id === 'concerti') {
@@ -324,7 +339,8 @@ ${groups.map(([name, l], i) => `<div id="c-${slug(name)}" class="tp"${i ? ' hidd
   } else {
     const list = items.filter(i => i.section === s.id);
     count = list.length;
-    inner = list.length ? `<ul class="list">${list.map(row).join('')}</ul>` : '<p class="empty">Niente di nuovo in questa finestra.</p>';
+    const newsOnly = s.id === 'notizie';
+    inner = list.length ? `<ul class="list">${newsOnly ? list.map(i => `<li class="news-title"><a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.title)}</a></li>`).join('') : list.map(row).join('')}</ul>` : '<p class="empty">Niente di nuovo in questa finestra.</p>';
   }
   return `<section id="${s.id}" class="sec">
 <header class="sh"><h2>${h(s.title)}</h2><span class="count">${count}</span><p>${h(s.sub)}</p></header>
@@ -383,6 +399,31 @@ nav.toc a[aria-current="true"]{background:var(--ink);border-color:var(--ink);col
 .filters button.only[aria-pressed="true"]{background:var(--hot);border-color:var(--hot);color:var(--paper)}
 .filters button.reset{border-style:dashed;color:var(--accent)}
 .fnote{margin:14px 0 0;font:400 13px/1.4 var(--mono);color:var(--muted)}
+.filter-drawer{margin-top:10px;font:400 12px/1 var(--mono);color:var(--muted)}
+.filter-drawer summary{display:inline-block;cursor:pointer;padding:8px 10px;border:1px solid var(--rule);border-radius:999px;background:var(--chip);color:var(--ink);font-weight:600;list-style:none}
+.filter-drawer summary::-webkit-details-marker{display:none}
+.filter-drawer summary::after{content:' +';color:var(--accent)}
+.filter-drawer[open] summary::after{content:' −'}
+.filter-drawer .filters{margin-top:10px}
+.content-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px;align-items:start}
+.news-side{position:sticky;top:68px;min-width:0;max-height:calc(100vh - 84px);overflow-y:auto;padding-right:8px;scrollbar-width:thin}
+.news-side .sec{margin-top:44px}
+.news-side .sh{position:sticky;top:0;z-index:2;background:var(--paper);padding-top:4px}
+.news-side .list{margin-top:4px}
+.news-side .news-title{padding:12px 0;border-bottom:1px solid var(--rule)}
+.news-side .news-title a{font-weight:600;font-size:16px;line-height:1.35;text-decoration:none;display:block}
+.news-side .news-title a:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+.review-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:24px 18px;list-style:none;margin:0;padding:0}
+.review-card{display:grid;grid-template-columns:96px minmax(0,1fr);grid-template-rows:auto auto auto;gap:5px 12px;align-items:start;min-width:0;padding:14px 0;border-bottom:1px solid var(--rule)}
+.review-card a{display:contents;text-decoration:none}
+.cover{aspect-ratio:1/1;overflow:hidden;border-radius:4px;background:var(--chip);display:block}
+.review-card .cover{grid-column:1;grid-row:1 / span 3}
+.cover img{width:100%;height:100%;object-fit:cover;display:block}
+.cover-ph{height:100%;display:grid;place-items:center;color:var(--accent);font:900 42px/.9 var(--display);text-transform:uppercase;padding:16px;text-align:center}
+.review-title,.review-count,.review-meta{grid-column:2;min-width:0}
+.review-title{font-weight:600;font-size:16px;line-height:1.3}
+.review-count{display:block;margin-top:2px;font:500 12px/1.4 var(--mono);color:var(--accent)}
+.review-meta{display:flex;flex-wrap:wrap;gap:3px 8px;font:400 12px/1.5 var(--mono);color:var(--muted)}
 .sec{margin-top:44px;scroll-margin-top:calc(64px + env(safe-area-inset-top,0px))}
 .sh{display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;gap:4px 12px;border-bottom:1px solid var(--ink);padding-bottom:8px}
 .sh h2{font:900 40px/1 var(--display);text-transform:uppercase;margin:0;text-wrap:balance}
@@ -441,6 +482,10 @@ footer .ko{color:var(--hot)}
   .meta .src{width:auto}
   .fresh-cols{grid-template-columns:1fr;gap:0}
   .sh h2{font-size:34px}
+  .content-grid{grid-template-columns:1fr}
+  .news-side{position:static;max-height:none;overflow:visible;padding-right:0}
+  .review-list{grid-template-columns:1fr;gap:0}
+  .review-card{grid-template-columns:84px minmax(0,1fr);gap:5px 10px}
 }
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 </style>
@@ -451,9 +496,9 @@ footer .ko{color:var(--hot)}
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + fresh.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 <nav class="toc" aria-label="Sezioni">${SECTIONS.map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
-<div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Mostra solo:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div>
+<details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
 <p class="fnote" id="fnote" hidden></p>
-${SECTIONS.map(section).join('\n')}
+<div class="content-grid"><main>${SECTIONS.filter(s => s.id !== 'notizie').map(section).join('\n')}</main><aside class="news-side" aria-label="Notizie">${section(SECTIONS.find(s => s.id === 'notizie'))}</aside></div>
 <footer>
   <p>Fonti: ${status.filter(s => s.ok).map(s => `${h(s.name)} (${s.n})`).join(' · ')}</p>
   ${failed.length ? `<p class="ko">Non raggiunte a questo giro: ${failed.map(s => `${h(s.name)} – ${h(s.err)}`).join(' · ')}</p>` : ''}
