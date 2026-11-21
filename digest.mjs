@@ -397,7 +397,7 @@ const page = () => `<title>Lato B</title>
 body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--body)}
 /* indispensabile per i filtri: senza, display:grid di .it/.ca vince sull'attributo hidden e le voci restano visibili */
 [hidden]{display:none!important}
-.wrap{max-width:1400px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1600px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 a{color:inherit}
 a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mast{display:grid;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:18px}
