@@ -11,17 +11,17 @@ const H = 3600e3;
 const UA = 'Mozilla/5.0 (LatoB RSS digest)';
 
 // ---------- fetch ----------
-async function get(url, retry = true) {
+async function get(url, retry = true, ua = UA) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 25000);
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' }, signal: ctl.signal });
+    const r = await fetch(url, { headers: { 'User-Agent': ua, Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' }, signal: ctl.signal });
     if (r.status === 429 && retry) {
       // rispetta il limite: aspetta quanto chiede il server (max 60 s) e riprova una volta
       const wait = Math.min(60, Number(r.headers.get('x-ratelimit-reset') || r.headers.get('retry-after')) || 30);
       clearTimeout(t);
       await new Promise(res => setTimeout(res, (wait + 2) * 1000));
-      return get(url, false);
+      return get(url, false, ua);
     }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.text();
@@ -137,47 +137,20 @@ await Promise.all(cfg.feeds.map(async feed => {
   } catch (e) { status.push({ name: feed.name, ok: false, err: String(e.message || e) }); }
 }));
 
-const fresh = [];
-const freshSeen = new Set();
-let redditOk = false;
-let redditErr = '';
-for (const url of cfg.reddit) {
-  if (fresh.length) break; // basta una richiesta andata a buon fine, per non farsi limitare
-  if (url !== cfg.reddit[0]) await new Promise(r => setTimeout(r, 3000));
-  try {
-    for (const it of parseFeed(await get(url))) {
-      const m = it.title.match(/^\s*\[\s*(fresh[^\]]*)\]\s*(.+)$/i);
-      if (!m || freshSeen.has(it.link)) continue;
-      if (it.ts && NOW - it.ts > cfg.windowHours * H) continue;
-      if (blocked({ title: m[2], cats: [] })) continue;
-      freshSeen.add(it.link);
-      const content = decode(it.rawDesc);
-      const ext = (content.match(/<a href="([^"]+)">\[link\]<\/a>/) || [])[1];
-      const kind = m[1].toUpperCase().replace(/\s+/g, ' ');
-      fresh.push({ kind, title: m[2].trim(), thread: it.link, ext: ext && !/reddit\.com/.test(ext) ? decode(ext) : '', ts: it.ts });
-    }
-    redditOk = true;
-  } catch (e) { redditErr = String(e.message || e); }
-}
-// Reddit limita spesso le richieste (HTTP 429): in quel caso si riusano gli ultimi [FRESH] scaricati
-const CACHE = join(DIR, 'fresh-cache.json');
-let freshStale = 0;
-if (redditOk && fresh.length) await writeFile(CACHE, JSON.stringify({ at: NOW, fresh }));
-else {
-  // Reddit blocca gli IP dei server GitHub: il PC di casa pubblica i suoi [FRESH] sul ramo "reddit" (vedi push-reddit.mjs)
-  let c = null;
-  try { c = JSON.parse(await readFile(CACHE, 'utf8')); } catch {}
-  try {
-    const r = JSON.parse(await get(cfg.redditMirror, false));
-    if (r && r.fresh && (!c || r.at > c.at)) c = r;
-  } catch {}
-  if (c) {
-    fresh.push(...c.fresh.filter(f => NOW - f.ts < cfg.windowHours * H));
-    // copia del PC di casa recente (meno di 13 ore, il suo ritmo): non è un errore
-    if (NOW - c.at < 13 * H) { redditOk = true; redditErr = ''; } else freshStale = c.at;
+// ---------- disco del giorno (Bandcamp Daily, rubrica "Album of the Day") ----------
+const aotd = [];
+try {
+  for (const it of parseFeed(await get(cfg.bandcampFeed, true, 'LatoB-digest/1.0'))) {
+    if (!it.cats.some(c => /album of the day/i.test(c)) && !/\/album-of-the-day\//.test(it.link)) continue;
+    // titolo "Artista, “Album”"; descrizione: <img> copertina + un paragrafo di presentazione
+    const m = it.title.match(/^(.+?),\s*[“"](.+?)[”"]\s*$/);
+    const paras = [...decode(it.rawDesc).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(p => text(p[1])).filter(p => p && !/^Read full story/i.test(p));
+    const image = (decode(it.rawDesc).match(/<img[^>]+src="([^"]+)"/) || [])[1] || it.image || '';
+    aotd.push({ artist: m ? m[1].trim() : '', album: m ? m[2].trim() : it.title, link: it.link, ex: paras[0] || '', image, ts: it.ts });
   }
-}
-status.push(redditOk && !freshStale ? { name: 'r/indieheads', ok: true, n: fresh.length } : { name: 'r/indieheads', ok: false, err: (redditErr || 'nessun post') + (freshStale ? ' (uso la copia precedente)' : '') });
+  status.push({ name: 'Bandcamp Daily', ok: true, n: aotd.length });
+} catch (e) { status.push({ name: 'Bandcamp Daily', ok: false, err: String(e.message || e) }); }
+aotd.sort((a, b) => b.ts - a.ts);
 
 // ---------- più recensiti ----------
 for (const [k, r] of Object.entries(archive)) if (NOW - r.ts > ARCHIVE_DAYS * 24 * H) delete archive[k];
@@ -268,7 +241,6 @@ const concertsBy = Object.fromEntries((cfg.concerts || []).map(c => [c.name,
   Object.values(concerts).filter(x => x.src === c.name).sort((a, b) => b.ts - a.ts).slice(0, cfg.concertPerSource || 12)]));
 
 items.sort((a, b) => b.ts - a.ts);
-fresh.sort((a, b) => b.ts - a.ts);
 
 // ---------- viste editoriali derivate dai dati reali ----------
 // Non sono classifiche editoriali inventate: aggregano soltanto citazioni e date già presenti nei feed.
@@ -307,6 +279,7 @@ const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const LANG = { it: 'IT', en: 'EN', fr: 'FR' };
 
 const SECTIONS = [
+  { id: 'disco-del-giorno', title: 'Disco del giorno', sub: 'La scelta quotidiana di Bandcamp Daily, con i giorni precedenti' },
   { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
   { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
   { id: 'uscite', title: 'Nuove uscite', sub: 'Album, EP e singoli segnalati dalle fonti monitorate' },
@@ -314,7 +287,6 @@ const SECTIONS = [
   { id: 'termometro', title: 'Termometro musicale', sub: 'Crescita delle citazioni negli ultimi 7 giorni rispetto ai 30 precedenti' },
   { id: 'dischi', title: 'Dischi', sub: `Recensioni e uscite, ultimi ${cfg.windowHours * 2 / 24} giorni` },
   { id: 'brani', title: 'Brani e video', sub: 'Singoli, anteprime, clip' },
-  { id: 'fresh', title: 'Reddit Radar', sub: 'Scoperte e post [FRESH] da r/indieheads; le altre community entrano quando il feed è disponibile' },
   { id: 'notizie', title: 'Notizie', sub: 'Annunci, tour, ristampe' },
   { id: 'approfondimenti', title: 'Approfondimenti', sub: 'Interviste, speciali, rubriche' },
 ];
@@ -325,14 +297,8 @@ function row(it) {
   <div class="body"><a class="t" href="${h(it.link)}" target="_blank" rel="noopener">${h(it.title)}</a>${it.ex ? `<p class="ex">${h(it.ex)}</p>` : ''}</div>
 </li>`;
 }
-function freshRow(f) {
-  const [artist, ...rest] = f.title.split(/\s+[-–—]\s+/);
-  const label = rest.length ? `<b>${h(artist)}</b> – ${h(rest.join(' – '))}` : `<b>${h(f.title)}</b>`;
-  return `<li class="fr" data-src="r-indieheads"${isNew(f.ts) ? ' data-new' : ''}>
-  <span class="kind">${h(f.kind.replace('FRESH', '').trim() || 'TRACK')}</span>
-  <span class="ft">${label}</span>
-  <span class="links">${f.ext ? `<a href="${h(f.ext)}" target="_blank" rel="noopener">ascolta</a>` : ''}<a href="${h(f.thread)}" target="_blank" rel="noopener">thread</a>${f.ts ? `<time>${h(fmt.format(f.ts))}</time>` : ''}</span>
-</li>`;
+function aotdCover(a, big) {
+  return IMAGES && a.image ? `<img src="${h(a.image)}" alt="Cover di ${h(a.album)}" loading="${big ? 'eager' : 'lazy'}">` : `<span class="cover-ph" aria-hidden="true">${h(a.album.slice(0, 2))}</span>`;
 }
 // "Russian Circles - Full Performance (Live on KEXP)" / "CMAT: Tiny Desk Concert" -> artista + etichetta
 function concertCard(c) {
@@ -347,15 +313,19 @@ function editorialRow(x, label, detail) {
 }
 function section(s) {
   let inner, count;
-  if (s.id === 'fresh') {
-    const isLong = f => /ALBUM|\bEP\b|MIXTAPE/.test(f.kind);
-    const long = fresh.filter(isLong);
-    const short = fresh.filter(f => !isLong(f));
-    count = fresh.length;
-    inner = (freshStale ? `<p class="note">Reddit non ha risposto: questi sono i post scaricati ${h(fmt.format(freshStale))}.</p>` : '') + (count ? `<div class="fresh-cols">
-  <div><h3>Album, EP, mixtape <span class="n">${long.length}</span></h3><ul class="frl">${long.map(freshRow).join('') || `<li class="empty">Nessun album nelle ultime ${cfg.windowHours} ore.</li>`}</ul></div>
-  <div><h3>Brani, video, live <span class="n">${short.length}</span></h3><ul class="frl">${short.map(freshRow).join('') || `<li class="empty">Nessun brano nelle ultime ${cfg.windowHours} ore.</li>`}</ul></div>
-</div>` : '<p class="empty">Reddit non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>');
+  if (s.id === 'disco-del-giorno') {
+    count = aotd.length;
+    const [top, ...prev] = aotd;
+    inner = top ? `<article class="aotd">
+  <a class="aotd-cover" href="${h(top.link)}" target="_blank" rel="noopener">${aotdCover(top, true)}</a>
+  <div class="aotd-body">
+    <span class="editorial-label">Bandcamp Daily · ${h(fmtDay.format(top.ts))}${isNew(top.ts) ? ' · <span class="pill">nuovo</span>' : ''}</span>
+    <h3><a href="${h(top.link)}" target="_blank" rel="noopener">${top.artist ? `<span class="aotd-artist">${h(top.artist)}</span>` : ''}<span class="aotd-album">${h(top.album)}</span></a></h3>
+    ${top.ex ? `<p class="ex">${h(top.ex)}</p>` : ''}
+    <a class="aotd-read" href="${h(top.link)}" target="_blank" rel="noopener">Leggi la recensione e ascolta →</a>
+  </div>
+</article>${prev.length ? `<ul class="aotd-prev">${prev.slice(0, 8).map(a => `<li><a href="${h(a.link)}" target="_blank" rel="noopener"><span class="cover">${aotdCover(a)}</span><span class="review-title">${a.artist ? `${h(a.artist)} – ` : ''}${h(a.album)}</span></a><span class="review-meta">${h(fmtDay.format(a.ts))}</span></li>`).join('')}</ul>` : ''}`
+      : '<p class="empty">Bandcamp Daily non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>';
   } else if (s.id === 'piu-recensiti') {
     count = consensus.length;
     // data-src elenca tutte le riviste che hanno recensito l'album: il filtro lo mostra se una di queste è scelta
@@ -397,10 +367,10 @@ ${inner}
 </section>`;
 }
 
-// fonti selezionabili nel filtro: riviste, più r/indieheads e i canali dei concerti se hanno voci
-const sources = [...new Set([...items.map(i => i.src), ...(fresh.length ? ['r/indieheads'] : []), ...Object.keys(concertsBy).filter(k => concertsBy[k].length)])]
+// fonti selezionabili nel filtro: riviste e i canali dei concerti se hanno voci
+const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy).filter(k => concertsBy[k].length)])]
   .sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
-const newCount = items.filter(i => isNew(i.ts)).length + fresh.filter(f => isNew(f.ts)).length;
+const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
 const failed = status.filter(s => !s.ok);
 
 let IMAGES = true;
@@ -419,7 +389,7 @@ const page = () => `<title>Lato B</title>
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}}
 :root[data-theme="dark"]{--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}
 body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--body)}
-/* indispensabile per i filtri: senza, display:grid di .it/.fr/.ca vince sull'attributo hidden e le voci restano visibili */
+/* indispensabile per i filtri: senza, display:grid di .it/.ca vince sull'attributo hidden e le voci restano visibili */
 [hidden]{display:none!important}
 .wrap{max-width:980px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 a{color:inherit}
@@ -488,16 +458,22 @@ ul{list-style:none;margin:0;padding:0}
 .t{font-weight:600;font-size:16px;line-height:1.35;text-decoration:none;text-wrap:pretty}
 .t:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
 .ex{margin:4px 0 0;color:var(--muted);font-size:14px;max-width:65ch}
-.fresh-cols{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:6px}
-.fresh-cols>div{min-width:0}
-.fresh-cols h3{font:700 22px/1 var(--display);text-transform:uppercase;letter-spacing:.02em;margin:14px 0 6px;display:flex;gap:8px;align-items:baseline}
 .n{font:500 12px/1 var(--mono);color:var(--accent)}
-.fr{display:grid;grid-template-columns:62px 1fr;gap:2px 10px;padding:9px 0;border-bottom:1px solid var(--rule)}
-.kind{font:500 10px/1.8 var(--mono);letter-spacing:.06em;color:var(--accent);text-transform:uppercase}
-.ft{min-width:0;overflow-wrap:anywhere}
-.ft b{font-weight:600}
-.fr[data-new] .ft::after{content:"nuovo";margin-left:8px;font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--hot)}
-.links{grid-column:2;display:flex;gap:12px;font:400 12px/1.4 var(--mono);color:var(--muted)}
+.aotd{display:grid;grid-template-columns:minmax(0,320px) 1fr;gap:20px 28px;align-items:start;margin-top:16px}
+.aotd-cover{display:block;aspect-ratio:1/1;border-radius:4px;overflow:hidden;background:var(--chip)}
+.aotd-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.aotd-body{min-width:0;display:grid;gap:10px}
+.aotd h3{margin:0}
+.aotd h3 a{text-decoration:none;display:grid;gap:4px}
+.aotd h3 a:hover .aotd-album{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:4px}
+.aotd-artist{font:600 18px/1.3 var(--body)}
+.aotd-album{font:900 clamp(36px,6vw,56px)/.95 var(--display);text-transform:uppercase;text-wrap:balance;overflow-wrap:anywhere}
+.aotd .ex{font-size:16px;color:var(--ink)}
+.aotd-read{font:500 13px/1.4 var(--mono);color:var(--accent)}
+.aotd-prev{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px 14px;margin-top:26px;padding-top:18px;border-top:1px solid var(--rule)}
+.aotd-prev a{text-decoration:none;display:grid;gap:6px}
+.aotd-prev .review-title{font-size:14px}
+.aotd-prev .cover-ph{font-size:30px}
 .cons{list-style:none;margin:0;padding:0}
 .ca{display:grid;grid-template-columns:56px 1fr;gap:4px 16px;padding:14px 0;border-bottom:1px solid var(--rule)}
 .cn{font:900 44px/.9 var(--display);color:var(--accent);font-variant-numeric:tabular-nums}
@@ -534,7 +510,7 @@ footer .ko{color:var(--hot)}
 @media (max-width:640px){
   .list .it{grid-template-columns:1fr}
   .meta .src{width:auto}
-  .fresh-cols{grid-template-columns:1fr;gap:0}
+  .aotd{grid-template-columns:1fr}
   .sh h2{font-size:34px}
   .content-grid{grid-template-columns:1fr}
   .news-side{position:static;max-height:none;overflow:visible;padding-right:0}
@@ -547,7 +523,7 @@ footer .ko{color:var(--hot)}
 <header class="mast">
   <p class="tag">Digest musicale personale · aggiornato ogni ora</p>
   <h1 tabindex="-1">Lato <span>B</span></h1>
-  <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + fresh.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
+  <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + aotd.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 <nav class="toc" aria-label="Sezioni">${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
 <details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
@@ -575,7 +551,7 @@ footer .ko{color:var(--hot)}
 
   // filtro "mostra solo": sel = fonti scelte (vuoto = tutte). Una voce può avere più fonti (album "Più recensiti").
   // Con un filtro attivo spariscono le sezioni rimaste vuote, con la loro voce nell'indice.
-  var KEY='latob-filters', sel={}, onlyNew=false, ITEMS='.it,.fr,.card,.ca';
+  var KEY='latob-filters', sel={}, onlyNew=false, ITEMS='.it,.card,.ca';
   try{var s=JSON.parse(localStorage.getItem(KEY)||'{}');sel=s.sel||{};onlyNew=!!s.onlyNew}catch(e){}
   var btns=document.querySelectorAll('.filters button[data-src]'), nb=document.getElementById('f-onlynew'), all=document.getElementById('f-all'), note=document.getElementById('fnote');
   for(var k in sel)if(!document.querySelector('.filters button[data-src="'+k+'"]'))delete sel[k]; // fonte non più presente
@@ -604,7 +580,7 @@ footer .ko{color:var(--hot)}
       var a=document.querySelector('nav.toc a[href="#'+sec.id+'"]'); if(a)a.hidden=!show;
     });
     note.hidden=!picked.length;
-    if(picked.length)note.textContent='Mostro solo '+picked.map(function(k){return sel[k]}).join(', ')+(onlyNew?' · solo nuovi':'')+': '+document.querySelectorAll('.it:not([hidden]),.fr:not([hidden]),.card:not([hidden]),.ca:not([hidden])').length+' voci. Tocca di nuovo una fonte per toglierla, o «tutte le fonti».';
+    if(picked.length)note.textContent='Mostro solo '+picked.map(function(k){return sel[k]}).join(', ')+(onlyNew?' · solo nuovi':'')+': '+document.querySelectorAll('.it:not([hidden]),.card:not([hidden]),.ca:not([hidden])').length+' voci. Tocca di nuovo una fonte per toglierla, o «tutte le fonti».';
     try{localStorage.setItem(KEY,JSON.stringify({sel:sel,onlyNew:onlyNew}))}catch(e){}
   }
   btns.forEach(function(b){b.addEventListener('click',function(){if(sel[b.dataset.src])delete sel[b.dataset.src];else sel[b.dataset.src]=b.textContent;apply()})});
@@ -631,4 +607,4 @@ IMAGES = false;
 await writeFile(join(DIR, 'artifact.html'), page());
 IMAGES = true;
 await writeFile(join(DIR, 'lato-b.html'), `<!doctype html>\n<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${page().replace('</style>', '</style></head><body>')}</body></html>\n`);
-console.log(JSON.stringify({ items: items.length, bySection: Object.fromEntries(['dischi', 'brani', 'notizie', 'approfondimenti'].map(k => [k, items.filter(i => i.section === k).length])), fresh: fresh.length, status }, null, 1));
+console.log(JSON.stringify({ items: items.length, bySection: Object.fromEntries(['dischi', 'brani', 'notizie', 'approfondimenti'].map(k => [k, items.filter(i => i.section === k).length])), aotd: aotd.length, status }, null, 1));

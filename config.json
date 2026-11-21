@@ -207,11 +207,6 @@
       "kind": "auto"
     }
   ],
-  "redditMirror": "https://raw.githubusercontent.com/daveSnob/lato-b/reddit/fresh-cache.json",
-  "reddit": [
-    "https://www.reddit.com/r/indieheads/new/.rss?limit=100",
-    "https://www.reddit.com/r/indieheads/search.rss?q=flair%3AFresh&restrict_sr=1&sort=new&limit=100"
-  ],
   "concerts": [
     {
       "name": "KEXP",
@@ -354,5 +349,6 @@
     "Billboard Hot 100",
     "Super Bowl",
     "Troye Sivan"
-  ]
+  ],
+  "bandcampFeed": "https://daily.bandcamp.com/feed"
 }
