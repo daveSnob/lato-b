@@ -141,11 +141,17 @@ await Promise.all(cfg.feeds.map(async feed => {
 const aotd = [];
 try {
   for (const it of parseFeed(await get(cfg.bandcampFeed, true, 'LatoB-digest/1.0'))) {
-    if (!it.cats.some(c => /album of the day/i.test(c)) && !/\/album-of-the-day\//.test(it.link)) continue;
-    // titolo "Artista, “Album”"; descrizione: <img> copertina + un paragrafo di presentazione
-    const m = it.title.match(/^(.+?),\s*[“"](.+?)[”"]\s*$/);
+    // descrizione: <img> copertina + un paragrafo di presentazione
     const paras = [...decode(it.rawDesc).matchAll(/<p>([\s\S]*?)<\/p>/g)].map(p => text(p[1])).filter(p => p && !/^Read full story/i.test(p));
     const image = (decode(it.rawDesc).match(/<img[^>]+src="([^"]+)"/) || [])[1] || it.image || '';
+    if (!it.cats.some(c => /album of the day/i.test(c)) && !/\/album-of-the-day\//.test(it.link)) {
+      // liste mensili (Best Punk, Best Ambient…), Essential Releases, speciali: in Approfondimenti
+      if (it.ts && NOW - it.ts < cfg.windowHours * 2 * H && !blocked({ title: it.title, cats: it.cats }))
+        items.push({ src: 'Bandcamp Daily', lang: 'en', section: 'approfondimenti', title: it.title, link: it.link, ts: it.ts, ex: [it.cats[0], paras[0]].filter(Boolean).join(' · '), image });
+      continue;
+    }
+    // titolo "Artista, “Album”"
+    const m = it.title.match(/^(.+?),\s*[“"](.+?)[”"]\s*$/);
     aotd.push({ artist: m ? m[1].trim() : '', album: m ? m[2].trim() : it.title, link: it.link, ex: paras[0] || '', image, ts: it.ts });
   }
   status.push({ name: 'Bandcamp Daily', ok: true, n: aotd.length });
