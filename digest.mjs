@@ -263,6 +263,33 @@ const concertsBy = Object.fromEntries((cfg.concerts || []).map(c => [c.name,
 items.sort((a, b) => b.ts - a.ts);
 fresh.sort((a, b) => b.ts - a.ts);
 
+// ---------- viste editoriali derivate dai dati reali ----------
+// Non sono classifiche editoriali inventate: aggregano soltanto citazioni e date già presenti nei feed.
+const artistFrom = it => {
+  const parsed = albumKey(it);
+  if (parsed?.artist) return parsed.artist;
+  const m = it.title.match(/^(.+?)\s+[-–—:]\s+.+$/);
+  return m ? unquote(m[1]) : '';
+};
+const emergingMap = new Map();
+for (const r of reviews) {
+  const artist = artistFrom(r);
+  if (!artist || artist.length < 2) continue;
+  const key = norm(artist);
+  const x = emergingMap.get(key) || { artist, sources: new Set(), last: r.ts, link: r.link, title: r.title };
+  x.sources.add(r.src); x.last = Math.max(x.last, r.ts); emergingMap.set(key, x);
+}
+const emerging = [...emergingMap.values()].filter(x => x.sources.size >= 2).sort((a, b) => b.sources.size - a.sources.size || b.last - a.last).slice(0, 12);
+const releaseCandidates = items.filter(i => ['dischi', 'brani'].includes(i.section)).slice(0, 24);
+const trendMap = new Map();
+for (const r of reviews) {
+  const artist = artistFrom(r); if (!artist) continue;
+  const key = norm(artist); const x = trendMap.get(key) || { artist, recent: 0, previous: 0, sources: new Set(), link: r.link, title: r.title };
+  if (NOW - r.ts < 7 * 24 * H) x.recent++; else if (NOW - r.ts < 30 * 24 * H) x.previous++;
+  x.sources.add(r.src); trendMap.set(key, x);
+}
+const trends = [...trendMap.values()].filter(x => x.recent && x.sources.size >= 2).sort((a, b) => (b.recent - b.previous) - (a.recent - a.previous) || b.recent - a.recent).slice(0, 10);
+
 // ---------- render ----------
 const h = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const fmt = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -275,9 +302,12 @@ const LANG = { it: 'IT', en: 'EN', fr: 'FR' };
 const SECTIONS = [
   { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
   { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
+  { id: 'uscite', title: 'Nuove uscite', sub: 'Album, EP e singoli segnalati dalle fonti monitorate' },
+  { id: 'emergenti', title: 'Artisti emergenti', sub: 'Artisti citati da almeno due fonti indipendenti' },
+  { id: 'termometro', title: 'Termometro musicale', sub: 'Crescita delle citazioni negli ultimi 7 giorni rispetto ai 30 precedenti' },
   { id: 'dischi', title: 'Dischi', sub: `Recensioni e uscite, ultimi ${cfg.windowHours * 2 / 24} giorni` },
   { id: 'brani', title: 'Brani e video', sub: 'Singoli, anteprime, clip' },
-  { id: 'fresh', title: 'Fresh su r/indieheads', sub: 'Post taggati [FRESH], [FRESH ALBUM], [FRESH EP]…' },
+  { id: 'fresh', title: 'Reddit Radar', sub: 'Scoperte e post [FRESH] da r/indieheads; le altre community entrano quando il feed è disponibile' },
   { id: 'notizie', title: 'Notizie', sub: 'Annunci, tour, ristampe' },
   { id: 'approfondimenti', title: 'Approfondimenti', sub: 'Interviste, speciali, rubriche' },
 ];
@@ -304,6 +334,9 @@ function concertCard(c) {
   const thumb = IMAGES ? `<img src="https://i.ytimg.com/vi/${h(c.vid)}/hqdefault.jpg" alt="" loading="lazy" width="480" height="360">` : '<span class="ph" aria-hidden="true">▶</span>';
   const when = c.approx ? `<span title="data approssimativa">≈ ${h(fmtDay.format(c.ts))}</span>` : `<time>${h(fmt.format(c.ts))}</time>`;
   return `<li class="card" data-src="${h(slug(c.src))}"${isNew(c.ts) ? ' data-new' : ''}><a href="https://www.youtube.com/watch?v=${h(c.vid)}" target="_blank" rel="noopener"><span class="thumb">${thumb}${isNew(c.ts) ? '<span class="pill solid">nuovo</span>' : ''}</span><span class="ct">${h(artist)}</span></a><span class="cm">${h(label)} · ${when}</span></li>`;
+}
+function editorialRow(x, label, detail) {
+  return `<li class="editorial-row"><div><span class="editorial-label">${h(label)}</span><a class="t" href="${h(x.link)}" target="_blank" rel="noopener">${h(x.artist || x.title)}</a><span class="editorial-detail">${h(detail)}</span></div></li>`;
 }
 function section(s) {
   let inner, count;
@@ -336,6 +369,15 @@ ${groups.map(([name, l], i) => `  <button type="button" role="tab" data-tab="c-$
 </div>
 ${groups.map(([name, l], i) => `<div id="c-${slug(name)}" class="tp"${i ? ' hidden' : ''}>${l.length ? `<ul class="cards">${l.map(concertCard).join('')}</ul>` : '<p class="empty">Nessun concerto in questa finestra.</p>'}</div>`).join('\n')}`
       : '<p class="empty">YouTube non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>';
+  } else if (s.id === 'uscite') {
+    count = releaseCandidates.length;
+    inner = count ? `<ul class="editorial-list">${releaseCandidates.map(i => `<li class="editorial-row"><div><span class="editorial-label">${h(i.section === 'dischi' ? 'ALBUM / EP' : 'SINGOLO')}</span><a class="t" href="${h(i.link)}" target="_blank" rel="noopener">${h(i.title)}</a><span class="editorial-detail">${h(i.src)} · ${h(fmt.format(i.ts))}</span></div></li>`).join('')}</ul>` : '<p class="empty">Nessuna uscita segnalata in questa finestra.</p>';
+  } else if (s.id === 'emergenti') {
+    count = emerging.length;
+    inner = count ? `<ul class="editorial-list">${emerging.map(x => editorialRow(x, `${x.sources.size} fonti`, `ultima citazione ${fmt.format(x.last)}`)).join('')}</ul>` : '<p class="empty">Non ci sono ancora artisti con citazioni incrociate sufficienti.</p>';
+  } else if (s.id === 'termometro') {
+    count = trends.length;
+    inner = count ? `<ul class="editorial-list">${trends.map(x => editorialRow(x, `+${x.recent - x.previous} citazioni`, `${x.recent} negli ultimi 7 giorni · ${x.sources.size} fonti`)).join('')}</ul>` : '<p class="empty">Dati insufficienti per calcolare una tendenza verificabile.</p>';
   } else {
     const list = items.filter(i => i.section === s.id);
     count = list.length;
@@ -473,6 +515,11 @@ ul{list-style:none;margin:0;padding:0}
 .ct{font-weight:600;font-size:16px;line-height:1.3;text-wrap:pretty}
 .card a:hover .ct{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
 .cm{display:block;margin-top:4px;font:400 12px/1.5 var(--mono);color:var(--muted)}
+.editorial-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 24px}
+.editorial-row{padding:14px 0;border-bottom:1px solid var(--rule);min-width:0}
+.editorial-row .t{display:block;margin-top:2px}
+.editorial-label{display:block;font:500 11px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.editorial-detail{display:block;margin-top:4px;font:400 12px/1.4 var(--mono);color:var(--muted)}
 .note,.empty{color:var(--muted);font-size:13px}
 footer{margin-top:56px;padding-top:14px;border-top:3px solid var(--ink);font:400 12px/1.6 var(--mono);color:var(--muted)}
 footer ul{display:flex;flex-wrap:wrap;gap:4px 14px}
