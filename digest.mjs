@@ -377,6 +377,10 @@ ${inner}
 const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy).filter(k => concertsBy[k].length)])]
   .sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
+// striscia a scorrimento tipo TG (solo telefono): le ultime notizie, ripetute due volte per un loop continuo
+const tickerNews = items.filter(i => i.section === 'notizie').slice(0, 15);
+const tickerOne = tickerNews.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.title)}</a>`).join('');
+const tickerHtml = tickerNews.length ? `<div class="ticker" aria-label="Ultime notizie"><a class="tk-label" href="#notizie">Notizie</a><div class="ticker-clip"><div class="ticker-track">${tickerOne}<span aria-hidden="true">${tickerOne}</span></div></div></div>` : '';
 const failed = status.filter(s => !s.ok);
 
 let IMAGES = true;
@@ -439,6 +443,14 @@ nav.toc a[aria-current="true"]{background:var(--ink);border-color:var(--ink);col
 .news-side .news-title a{font-weight:600;font-size:16px;line-height:1.35;text-decoration:none;display:block}
 .news-side .news-title a:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
 .news-side .news-time{display:block;margin-top:4px;font:400 12px/1.4 var(--mono);color:var(--muted)}
+.ticker{display:none;align-items:stretch;margin:14px -16px 0;background:var(--ink);color:var(--paper);font:600 13px/1 var(--body)}
+.ticker .tk-label{flex:none;display:grid;place-items:center;padding:0 12px;background:var(--hot);color:#fff;text-decoration:none;font:700 12px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em}
+.ticker-clip{flex:1;min-width:0;overflow:hidden}
+.ticker-track{display:flex;width:max-content;padding:11px 0;white-space:nowrap;animation:tick 90s linear infinite}
+.ticker-track a{color:inherit;text-decoration:none;padding-right:36px}
+.ticker-track a::before{content:"•";color:var(--hot);margin-right:10px}
+.ticker:hover .ticker-track,.ticker:focus-within .ticker-track{animation-play-state:paused}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .review-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:24px 18px;list-style:none;margin:0;padding:0}
 .review-card{display:grid;grid-template-columns:96px minmax(0,1fr);grid-template-rows:auto auto auto;gap:5px 12px;align-items:start;min-width:0;padding:14px 0;border-bottom:1px solid var(--rule)}
 .review-card a{display:contents;text-decoration:none}
@@ -521,10 +533,12 @@ footer .ko{color:var(--hot)}
   .sh h2{font-size:34px}
   .content-grid{grid-template-columns:1fr}
   .news-side{position:static;max-height:none;overflow:visible;padding-right:0}
+  .ticker{display:flex}
   .review-list{grid-template-columns:1fr;gap:0}
   .review-card{grid-template-columns:84px minmax(0,1fr);gap:5px 10px}
 }
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+@media (prefers-reduced-motion:reduce){.ticker-track{animation:none}.ticker-clip{overflow-x:auto}}
 </style>
 <div class="wrap">
 <header class="mast">
@@ -532,7 +546,8 @@ footer .ko{color:var(--hot)}
   <h1 tabindex="-1">Lato <span>B</span></h1>
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + aotd.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
-<nav class="toc" aria-label="Sezioni">${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}</nav>
+${tickerHtml}
+<nav class="toc" aria-label="Sezioni">${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
 <details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
 <p class="fnote" id="fnote" hidden></p>
 <div class="content-grid"><main>${SECTIONS.filter(s => s.id !== 'notizie').map(section).join('\n')}</main><aside class="news-side" aria-label="Notizie">${section(SECTIONS.find(s => s.id === 'notizie'))}</aside></div>
