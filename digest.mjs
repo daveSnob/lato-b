@@ -379,10 +379,14 @@ const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
 // ---------- Player: video YouTube degli artisti citati (ricerca pubblica, senza chiavi) ----------
 // Per ogni artista tiene i video più recenti tra i risultati della ricerca; la cache dura 24 ore per non interrogare YouTube a ogni giro.
-const VID_CACHE = join(DIR, 'videos-cache.json');
+const VID_CACHE = join(DIR, 'videos-cache-v2.json'); // v2: filtro full/pubblicità e solo artisti di "Più recensiti"
 let vidCache = {};
 try { vidCache = JSON.parse(await readFile(VID_CACHE, 'utf8')); } catch {}
-const playerArtists = [...new Set([...aotd.map(a => a.artist), ...items.filter(i => i.section === 'dischi').map(i => albumKey(i)?.artist)].filter(Boolean))].slice(0, 30);
+// solo gli artisti della sezione "Più recensiti", in ordine di recensioni
+const playerArtists = [...new Set(consensus.map(c => c.artist).filter(Boolean))].slice(0, 30);
+// esclude album completi, spot/pubblicità e video oltre 12 minuti
+const secondsOf = s => s.split(':').reduce((t, x) => t * 60 + Number(x), 0);
+const isAd = (title, len) => /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show)\b|\bpubblicit|\bsponsor|\badvert|\bpromo\b|\bteaser\b|\bad\b/i.test(title) || secondsOf(len) > 12 * 60;
 async function ytLatest(artist) {
   const r = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(artist + ' official video')}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' }, signal: AbortSignal.timeout(25000) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -394,7 +398,7 @@ async function ytLatest(artist) {
     if (o.videoRenderer) {
       const v = o.videoRenderer, len = v.lengthText?.simpleText || '', title = v.title?.runs?.[0]?.text || '';
       // niente Shorts (non hanno durata) e solo video in cui compare il nome dell'artista
-      if (v.videoId && len && title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').includes(key)) out.push({ id: v.videoId, title, length: len, ts: relTs(v.publishedTimeText?.simpleText) });
+      if (v.videoId && len && !isAd(title, len) && title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').includes(key)) out.push({ id: v.videoId, title, length: len, ts: relTs(v.publishedTimeText?.simpleText) });
     }
     for (const k in o) walk(o[k]);
   })(JSON.parse(m[1]));
