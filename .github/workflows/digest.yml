@@ -30,6 +30,7 @@ jobs:
           path: |
             reviews-db.json
             concerts-cache.json
+            disco-giorno.json
           key: cache-${{ github.run_id }}
           restore-keys: cache-
       - run: node digest.mjs

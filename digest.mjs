@@ -158,6 +158,15 @@ try {
 } catch (e) { status.push({ name: 'Bandcamp Daily', ok: false, err: String(e.message || e) }); }
 aotd.sort((a, b) => b.ts - a.ts);
 
+// storico "disco del giorno": oggi + i 7 giorni precedenti, salvato tra un'esecuzione e l'altra
+const AOTD_DB = join(DIR, 'disco-giorno.json');
+let aotdHist = {};
+try { aotdHist = JSON.parse(await readFile(AOTD_DB, 'utf8')); } catch {}
+for (const a of aotd) aotdHist[a.link] = a;
+for (const [k, a] of Object.entries(aotdHist)) if (NOW - a.ts > 7 * 24 * H) delete aotdHist[k];
+await writeFile(AOTD_DB, JSON.stringify(aotdHist));
+const giorno = Object.values(aotdHist).sort((a, b) => b.ts - a.ts).slice(0, 8);
+
 // ---------- più recensiti ----------
 for (const [k, r] of Object.entries(archive)) if (NOW - r.ts > ARCHIVE_DAYS * 24 * H) delete archive[k];
 await writeFile(ARCHIVE, JSON.stringify(archive));
@@ -285,7 +294,7 @@ const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const LANG = { it: 'IT', en: 'EN', fr: 'FR' };
 
 const SECTIONS = [
-  { id: 'disco-del-giorno', title: 'Disco del giorno', sub: 'La scelta quotidiana di Bandcamp Daily, con i giorni precedenti' },
+  { id: 'disco-del-giorno', title: 'Disco del giorno', sub: 'La scelta quotidiana di Bandcamp Daily: oggi e i 7 giorni precedenti, da scorrere' },
   { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
   { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
   { id: 'uscite', title: 'Nuove uscite', sub: 'Album, EP e singoli segnalati dalle fonti monitorate' },
@@ -320,17 +329,20 @@ function editorialRow(x, label, detail) {
 function section(s) {
   let inner, count;
   if (s.id === 'disco-del-giorno') {
-    count = aotd.length;
-    const [top, ...prev] = aotd;
-    inner = top ? `<article class="aotd">
-  <a class="aotd-cover" href="${h(top.link)}" target="_blank" rel="noopener">${aotdCover(top, true)}</a>
+    count = giorno.length;
+    const slides = giorno.map((a, i) => `<article class="aotd">
+  <a class="aotd-cover" href="${h(a.link)}" target="_blank" rel="noopener">${aotdCover(a, i === 0)}</a>
   <div class="aotd-body">
-    <span class="editorial-label">Bandcamp Daily · ${h(fmtDay.format(top.ts))}${isNew(top.ts) ? ' · <span class="pill">nuovo</span>' : ''}</span>
-    <h3><a href="${h(top.link)}" target="_blank" rel="noopener">${top.artist ? `<span class="aotd-artist">${h(top.artist)}</span>` : ''}<span class="aotd-album">${h(top.album)}</span></a></h3>
-    ${top.ex ? `<p class="ex">${h(top.ex)}</p>` : ''}
-    <a class="aotd-read" href="${h(top.link)}" target="_blank" rel="noopener">Leggi la recensione e ascolta →</a>
+    <span class="editorial-label">Bandcamp Daily · ${h(fmtDay.format(a.ts))}${i === 0 && isNew(a.ts) ? ' · <span class="pill">nuovo</span>' : ''}</span>
+    <h3><a href="${h(a.link)}" target="_blank" rel="noopener">${a.artist ? `<span class="aotd-artist">${h(a.artist)}</span>` : ''}<span class="aotd-album">${h(a.album)}</span></a></h3>
+    ${a.ex ? `<p class="ex">${h(a.ex)}</p>` : ''}
+    <a class="aotd-read" href="${h(a.link)}" target="_blank" rel="noopener">Leggi la recensione e ascolta →</a>
   </div>
-</article>${prev.length ? `<ul class="aotd-prev">${prev.slice(0, 8).map(a => `<li><a href="${h(a.link)}" target="_blank" rel="noopener"><span class="cover">${aotdCover(a)}</span><span class="review-title">${a.artist ? `${h(a.artist)} – ` : ''}${h(a.album)}</span></a><span class="review-meta">${h(fmtDay.format(a.ts))}</span></li>`).join('')}</ul>` : ''}`
+</article>`).join('');
+    inner = giorno.length ? `<div class="aotd-car">
+  <div class="aotd-track" tabindex="0" aria-label="Dischi del giorno: scorri per sfogliare i giorni precedenti">${slides}</div>
+  <div class="aotd-nav"><button type="button" data-dir="-1" aria-label="Disco precedente">←</button><span class="aotd-count" aria-live="polite">1 / ${giorno.length}</span><button type="button" data-dir="1" aria-label="Disco successivo">→</button></div>
+</div>`
       : '<p class="empty">Bandcamp Daily non ha risposto a questo giro: riprova al prossimo aggiornamento.</p>';
   } else if (s.id === 'piu-recensiti') {
     count = consensus.length;
@@ -585,6 +597,14 @@ ul{list-style:none;margin:0;padding:0}
 .aotd{display:grid;grid-template-columns:minmax(0,320px) 1fr;gap:20px 28px;align-items:start;margin-top:16px}
 .aotd-cover{display:block;aspect-ratio:1/1;border-radius:4px;overflow:hidden;background:var(--chip)}
 .aotd-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.aotd-car{margin-top:16px}
+.aotd-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
+.aotd-track::-webkit-scrollbar{display:none}
+.aotd-track .aotd{flex:0 0 100%;scroll-snap-align:start;margin-top:0;padding-right:2px;box-sizing:border-box}
+.aotd-nav{display:flex;align-items:center;gap:14px;margin-top:18px;font:500 13px/1 var(--mono)}
+.aotd-nav button{font:inherit;width:38px;height:38px;border-radius:999px;border:1px solid var(--ink);background:none;color:var(--ink);cursor:pointer}
+.aotd-nav button:hover{background:var(--ink);color:var(--paper,#fff)}
+.aotd-count{min-width:56px;text-align:center;color:var(--muted)}
 .aotd-body{min-width:0;display:grid;gap:10px}
 .aotd h3{margin:0}
 .aotd h3 a{text-decoration:none;display:grid;gap:4px}
@@ -719,6 +739,11 @@ ${playerBlock}
   function onScroll(){top.hidden=window.scrollY<600}
   window.addEventListener('scroll',onScroll,{passive:true});onScroll();
   top.addEventListener('click',function(){window.scrollTo({top:0});document.querySelector('.mast h1').focus({preventScroll:true})});
+  document.querySelectorAll('.aotd-car').forEach(function(car){
+    var tr=car.querySelector('.aotd-track'),ct=car.querySelector('.aotd-count');
+    tr.addEventListener('scroll',function(){ct.textContent=(Math.round(tr.scrollLeft/tr.clientWidth)+1)+' / '+tr.children.length},{passive:true});
+    car.querySelectorAll('[data-dir]').forEach(function(b){b.addEventListener('click',function(){tr.scrollBy({left:Number(b.dataset.dir)*tr.clientWidth,behavior:'smooth'})})});
+  });
   if('IntersectionObserver' in window){
     var io=new IntersectionObserver(function(es){es.forEach(function(e){if(!e.isIntersecting)return;
       links.forEach(function(a){var on=a.getAttribute('href')==='#'+e.target.id;a.setAttribute('aria-current',on?'true':'false');if(on&&a.scrollIntoView)a.parentNode.scrollTo({left:a.offsetLeft-16})})})},{rootMargin:'-30% 0px -65% 0px'});
