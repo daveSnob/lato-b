@@ -379,7 +379,7 @@ const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
 // ---------- Player: video YouTube degli artisti citati (ricerca pubblica, senza chiavi) ----------
 // Per ogni artista tiene i video più recenti tra i risultati della ricerca; la cache dura 24 ore per non interrogare YouTube a ogni giro.
-const VID_CACHE = join(DIR, 'videos-cache-v4.json'); // v3: filtro pubblicità potenziato (blocchi promo, badge, parole chiave)
+const VID_CACHE = join(DIR, 'videos-cache-v5.json'); // v3: filtro pubblicità potenziato (blocchi promo, badge, parole chiave)
 let vidCache = {};
 try { vidCache = JSON.parse(await readFile(VID_CACHE, 'utf8')); } catch {}
 // solo gli artisti della sezione "Più recensiti", in ordine di recensioni
@@ -387,7 +387,7 @@ const playerArtists = [...new Set(consensus.map(c => c.artist).filter(Boolean))]
 // esclude album completi, spot/pubblicità e video oltre 12 minuti
 const secondsOf = s => s.split(':').reduce((t, x) => t * 60 + Number(x), 0);
 // titoli di album completi, spot e contenuti promozionali; oltre 12 minuti non è un singolo
-const AD_RE = /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show|movie|film)\b|\bpubblicit|\breklam|\bsponsor|\badvert|\bcommercial|\bspot\b|\bpromo\b|\bpromotion|\bteaser\b|\btrailer\b|\bad\b|\bads\b|\bcampaign|\bcampagna|\bbrand\b|\bsponsored\b|\bshop\s+now|\bbuy\s+now|\bout\s+now\s+on\b|\bpre[- ]?save\b|\bgiveaway\b|\bcontest\b|\bconcorso\b|\breview\b|\bvlog\b|\bdocumentary\b|\binterview\b|\bpodcast\b|\breaction\b/i;
+const AD_RE = /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show|movie|film)\b|\bpubblicit|\breklam|\bsponsor|\badvert|\bcommercial|\bspot\b|\bpromo\b|\bpromotion|\bteaser\b|\btrailer\b|\bad\b|\bads\b|\bcampaign|\bcampagna|\bbrand\b|\bsponsored\b|\bshop\s+now|\bbuy\s+now|\bout\s+now\s+on\b|\bpre[- ]?save\b|\bgiveaway\b|\bcontest\b|\bconcorso\b|\breview\b|\bvlog\b|\bdocumentary\b|\binterview\b|\bpodcast\b|\breaction\b|\bpresents?\b|\bamazon\b|\bspotify\b|\bapple\s+music\b|\bdeezer\b|\btidal\b|\byoutube\s+music\b|\bcalvin\s+klein\b|\bnike\b|\badidas\b|\bgucci\b|\bsony\b|\bcollab\s+with\b|\bsession\s+sponsored\b/i;
 const isAd = (title, len) => AD_RE.test(title) || secondsOf(len) > 12 * 60;
 // ---- ricerca del video più recente: prima il canale ufficiale dell'artista (scheda Video, ordinata dal più recente), poi i risultati di ricerca ----
 const UA_YT = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' };
