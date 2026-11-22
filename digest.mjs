@@ -379,7 +379,7 @@ const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
 // ---------- Player: video YouTube degli artisti citati (ricerca pubblica, senza chiavi) ----------
 // Per ogni artista tiene i video più recenti tra i risultati della ricerca; la cache dura 24 ore per non interrogare YouTube a ogni giro.
-const VID_CACHE = join(DIR, 'videos-cache-v3.json'); // v3: filtro pubblicità potenziato (blocchi promo, badge, parole chiave)
+const VID_CACHE = join(DIR, 'videos-cache-v4.json'); // v3: filtro pubblicità potenziato (blocchi promo, badge, parole chiave)
 let vidCache = {};
 try { vidCache = JSON.parse(await readFile(VID_CACHE, 'utf8')); } catch {}
 // solo gli artisti della sezione "Più recensiti", in ordine di recensioni
@@ -389,27 +389,58 @@ const secondsOf = s => s.split(':').reduce((t, x) => t * 60 + Number(x), 0);
 // titoli di album completi, spot e contenuti promozionali; oltre 12 minuti non è un singolo
 const AD_RE = /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show|movie|film)\b|\bpubblicit|\breklam|\bsponsor|\badvert|\bcommercial|\bspot\b|\bpromo\b|\bpromotion|\bteaser\b|\btrailer\b|\bad\b|\bads\b|\bcampaign|\bcampagna|\bbrand\b|\bsponsored\b|\bshop\s+now|\bbuy\s+now|\bout\s+now\s+on\b|\bpre[- ]?save\b|\bgiveaway\b|\bcontest\b|\bconcorso\b|\breview\b|\bvlog\b|\bdocumentary\b|\binterview\b|\bpodcast\b|\breaction\b/i;
 const isAd = (title, len) => AD_RE.test(title) || secondsOf(len) > 12 * 60;
-async function ytLatest(artist) {
-  const r = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(artist + ' official video')}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' }, signal: AbortSignal.timeout(25000) });
+// ---- ricerca del video più recente: prima il canale ufficiale dell'artista (scheda Video, ordinata dal più recente), poi i risultati di ricerca ----
+const UA_YT = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' };
+async function ytData(url) {
+  const r = await fetch(url, { headers: UA_YT, signal: AbortSignal.timeout(25000) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const m = (await r.text()).match(/var ytInitialData = (\{[\s\S]*?\});<\/script>/);
   if (!m) throw new Error('pagina senza dati');
-  const out = [], key = artist.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  return JSON.parse(m[1]);
+}
+const normName = s => (s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const PROMO_KEYS = ['promotedSparklesWebRenderer', 'promotedVideoRenderer', 'adSlotRenderer', 'searchPyvRenderer', 'promotedSparklesTextSearchRenderer', 'carouselAdRenderer', 'displayAdRenderer'];
+// raccoglie tutti i video (ricerca o pagina canale), saltando i blocchi pubblicitari
+function ytVideos(root) {
+  const out = [];
   (function walk(o) {
     if (!o || typeof o !== 'object') return;
-    // blocchi pubblicitari di YouTube: si scartano con tutto il contenuto
-    if (o.promotedSparklesWebRenderer || o.promotedVideoRenderer || o.adSlotRenderer || o.searchPyvRenderer || o.promotedSparklesTextSearchRenderer) return;
-    if (o.videoRenderer) {
-      const v = o.videoRenderer, len = v.lengthText?.simpleText || '', title = v.title?.runs?.[0]?.text || '';
-      const badges = [...(v.badges || []), ...(v.ownerBadges || []), ...(v.sponsoredBadge ? [1] : []), ...(v.adBadge ? [1] : [])];
-      const badged = badges.some(b => b === 1 || /sponsor|annuncio|advert|\bad\b|pubblicit|promot/i.test(JSON.stringify(b)));
-      // niente Shorts (non hanno durata), niente video con etichetta pubblicitaria, solo video in cui compare il nome dell'artista
-      if (v.videoId && len && !badged && !isAd(title, len) && title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').includes(key)) out.push({ id: v.videoId, title, length: len, ts: relTs(v.publishedTimeText?.simpleText) });
+    if (Array.isArray(o)) return o.forEach(walk);
+    if (PROMO_KEYS.some(k => k in o)) return;
+    const v = o.videoRenderer || o.gridVideoRenderer;
+    if (v && v.videoId) {
+      const owner = v.ownerText?.runs?.[0] || {};
+      const badgeText = JSON.stringify([v.badges || [], v.ownerBadges || [], v.sponsoredBadge || '', v.adBadge || '']);
+      out.push({
+        id: v.videoId, title: v.title?.runs?.[0]?.text || v.title?.simpleText || '', length: v.lengthText?.simpleText || '',
+        ts: relTs(v.publishedTimeText?.simpleText), owner: owner.text || '', ownerId: owner.navigationEndpoint?.browseEndpoint?.browseId || '',
+        badged: /sponsor|annuncio|advert|"ad"|pubblicit|promot/i.test(badgeText)
+      });
     }
     for (const k in o) walk(o[k]);
-  })(JSON.parse(m[1]));
+  })(root);
+  return out;
+}
+// il canale è dell'artista se il nome coincide, o è il canale "Artista - Topic" / VEVO / ufficiale
+const isArtistOwner = (name, key) => { const k = normName(name); return !!key && (k === key || (k.startsWith(key) && /topic|vevo|official|records|music/i.test(name))); };
+async function ytLatest(artist) {
+  const key = normName(artist);
+  const search = await ytData(`https://www.youtube.com/results?search_query=${encodeURIComponent(artist + ' official video')}`);
+  const hits = ytVideos(search).filter(v => !v.badged && v.length);
+  const channel = hits.find(v => v.ownerId && isArtistOwner(v.owner, key));
+  let picked = [];
+  if (channel) {
+    // scheda Video del canale: i video più recenti sono i primi
+    await new Promise(r => setTimeout(r, 1200));
+    const page = await ytData(`https://www.youtube.com/channel/${channel.ownerId}/videos`);
+    picked = ytVideos(page).filter(v => v.length && !v.badged && !isAd(v.title, v.length));
+  }
+  if (!picked.length) {
+    // ripiego: risultati di ricerca di canali dell'artista o titoli che lo nominano
+    picked = hits.filter(v => (isArtistOwner(v.owner, key) || normName(v.title).includes(key)) && !isAd(v.title, v.length)).sort((a, b) => b.ts - a.ts);
+  }
   const seen = new Set();
-  return out.sort((a, b) => b.ts - a.ts).filter(v => !seen.has(v.id) && seen.add(v.id)).slice(0, 3);
+  return picked.filter(v => !seen.has(v.id) && seen.add(v.id)).slice(0, 3).map((v, i) => ({ id: v.id, title: v.title, length: v.length, ts: v.ts, latest: i === 0 }));
 }
 for (const artist of playerArtists) {
   const c = vidCache[artist];
@@ -420,11 +451,11 @@ for (const artist of playerArtists) {
 }
 await writeFile(VID_CACHE, JSON.stringify(vidCache));
 const playerVideos = playerArtists.flatMap(a => (vidCache[a]?.videos || []).map(v => ({ ...v, artist: a })));
-const playerBlock = playerVideos.length ? `<section id="player" class="sec">
+const playerBlock = playerVideos.length ? `<section id="player" class="sec pl-collapsed">
 <header class="sh"><h2>Player</h2><span class="count" id="pl-count"></span><p>Gli ultimi video degli artisti citati, in ordine casuale ad ogni visita</p></header>
 <div class="pl-controls"><select id="pl-artist" aria-label="Filtra per artista"><option value="">Tutti gli artisti</option>${[...new Set(playerVideos.map(v => v.artist))].sort().map(a => `<option value="${h(a)}">${h(a)}</option>`).join('')}</select><button type="button" id="pl-prev">◀ Precedente</button><button type="button" id="pl-next">Successivo ▶</button><button type="button" id="pl-shuffle">Rimescola</button></div>
 <div class="pl-frame"><div id="pl-yt"></div></div><p class="pl-now" id="pl-now"></p>
-<style>.pl-controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.pl-controls select,.pl-controls button{max-width:100%;font:600 14px/1 var(--body);min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--rule);background:var(--chip);color:var(--ink);cursor:pointer}.pl-frame{max-width:100%;position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}.pl-frame iframe,#pl-yt{position:absolute;inset:0;width:100%;height:100%}.pl-now{margin:10px 0 0;font:500 14px/1.4 var(--mono);color:var(--muted)}</style>
+<style>.pl-controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.pl-controls select,.pl-controls button{max-width:100%;font:600 14px/1 var(--body);min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--rule);background:var(--chip);color:var(--ink);cursor:pointer}.pl-frame{max-width:100%;position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}.pl-frame iframe,#pl-yt{position:absolute;inset:0;width:100%;height:100%}.pl-now{margin:10px 0 0;font:500 14px/1.4 var(--mono);color:var(--muted)}#player.pl-collapsed{display:none}.pl-open{flex:none;font:600 13px/1 var(--body);padding:8px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--accent);color:var(--paper);cursor:pointer}</style>
 <script>window.PLAYER_VIDEOS=${JSON.stringify(playerVideos).replace(/</g, '\\u003c')};</script>
 <script>
 (function(){
@@ -444,6 +475,8 @@ const playerBlock = playerVideos.length ? `<section id="player" class="sec">
       onStateChange:function(e){if(e.data===YT.PlayerState.ENDED)skip();},
       onError:function(){skip();}}});
   };
+  var box=document.getElementById('player'), openBtn=document.getElementById('pl-open');
+  openBtn.onclick=function(){var c=box.classList.toggle('pl-collapsed');openBtn.setAttribute('aria-expanded',String(!c));if(!c)box.scrollIntoView({behavior:'smooth',block:'start'});};
   var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);
 })();
 </script>
@@ -617,7 +650,7 @@ footer .ko{color:var(--hot)}
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + aotd.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 ${tickerHtml}
-<nav class="toc" aria-label="Sezioni">${playerBlock ? '<a href="#player">Player</a>' : ''}${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
+<nav class="toc" aria-label="Sezioni">${playerBlock ? '<button type="button" id="pl-open" class="pl-open" aria-controls="player" aria-expanded="false">Player ▾</button>' : ''}${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
 <details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
 <p class="fnote" id="fnote" hidden></p>
 ${playerBlock}
