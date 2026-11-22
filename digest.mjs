@@ -396,7 +396,7 @@ const page = () => `<title>Lato B</title>
   --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}}
+:root:not([data-theme="light"]){--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}
 :root[data-theme="dark"]{--paper:#111316;--ink:#E6E8E3;--muted:#99A0A7;--rule:#2A2E33;--accent:#97A6FF;--hot:#FF8A5B;--chip:#1C1F23;color-scheme:dark}
 body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--body)}
 /* indispensabile per i filtri: senza, display:grid di .it/.ca vince sull'attributo hidden e le voci restano visibili */
@@ -443,7 +443,7 @@ nav.toc a[aria-current="true"]{background:var(--ink);border-color:var(--ink);col
 .news-side .news-title a{font-weight:600;font-size:16px;line-height:1.35;text-decoration:none;display:block}
 .news-side .news-title a:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
 .news-side .news-time{display:block;margin-top:4px;font:400 12px/1.4 var(--mono);color:var(--muted)}
-.ticker{display:none;align-items:stretch;margin:14px -16px 0;background:var(--ink);color:var(--paper);font:600 13px/1 var(--body)}
+.ticker{display:flex;align-items:stretch;margin:14px -16px 0;background:var(--ink);color:var(--paper);font:600 13px/1 var(--body)}
 .ticker .tk-label{flex:none;display:grid;place-items:center;padding:0 12px;background:var(--hot);color:#fff;text-decoration:none;font:700 12px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em}
 .ticker-clip{flex:1;min-width:0;overflow:hidden}
 .ticker-track{display:flex;width:max-content;padding:11px 0;white-space:nowrap;animation:tick 90s linear infinite}
@@ -533,7 +533,6 @@ footer .ko{color:var(--hot)}
   .sh h2{font-size:34px}
   .content-grid{grid-template-columns:1fr}
   .news-side{position:static;max-height:none;overflow:visible;padding-right:0}
-  .ticker{display:flex}
   .review-list{grid-template-columns:1fr;gap:0}
   .review-card{grid-template-columns:84px minmax(0,1fr);gap:5px 10px}
 }
