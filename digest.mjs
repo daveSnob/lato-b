@@ -379,14 +379,16 @@ const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
 // ---------- Player: video YouTube degli artisti citati (ricerca pubblica, senza chiavi) ----------
 // Per ogni artista tiene i video più recenti tra i risultati della ricerca; la cache dura 24 ore per non interrogare YouTube a ogni giro.
-const VID_CACHE = join(DIR, 'videos-cache-v2.json'); // v2: filtro full/pubblicità e solo artisti di "Più recensiti"
+const VID_CACHE = join(DIR, 'videos-cache-v3.json'); // v3: filtro pubblicità potenziato (blocchi promo, badge, parole chiave)
 let vidCache = {};
 try { vidCache = JSON.parse(await readFile(VID_CACHE, 'utf8')); } catch {}
 // solo gli artisti della sezione "Più recensiti", in ordine di recensioni
 const playerArtists = [...new Set(consensus.map(c => c.artist).filter(Boolean))].slice(0, 30);
 // esclude album completi, spot/pubblicità e video oltre 12 minuti
 const secondsOf = s => s.split(':').reduce((t, x) => t * 60 + Number(x), 0);
-const isAd = (title, len) => /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show)\b|\bpubblicit|\bsponsor|\badvert|\bpromo\b|\bteaser\b|\bad\b/i.test(title) || secondsOf(len) > 12 * 60;
+// titoli di album completi, spot e contenuti promozionali; oltre 12 minuti non è un singolo
+const AD_RE = /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show|movie|film)\b|\bpubblicit|\breklam|\bsponsor|\badvert|\bcommercial|\bspot\b|\bpromo\b|\bpromotion|\bteaser\b|\btrailer\b|\bad\b|\bads\b|\bcampaign|\bcampagna|\bbrand\b|\bsponsored\b|\bshop\s+now|\bbuy\s+now|\bout\s+now\s+on\b|\bpre[- ]?save\b|\bgiveaway\b|\bcontest\b|\bconcorso\b|\breview\b|\bvlog\b|\bdocumentary\b|\binterview\b|\bpodcast\b|\breaction\b/i;
+const isAd = (title, len) => AD_RE.test(title) || secondsOf(len) > 12 * 60;
 async function ytLatest(artist) {
   const r = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(artist + ' official video')}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' }, signal: AbortSignal.timeout(25000) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -395,10 +397,14 @@ async function ytLatest(artist) {
   const out = [], key = artist.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
   (function walk(o) {
     if (!o || typeof o !== 'object') return;
+    // blocchi pubblicitari di YouTube: si scartano con tutto il contenuto
+    if (o.promotedSparklesWebRenderer || o.promotedVideoRenderer || o.adSlotRenderer || o.searchPyvRenderer || o.promotedSparklesTextSearchRenderer) return;
     if (o.videoRenderer) {
       const v = o.videoRenderer, len = v.lengthText?.simpleText || '', title = v.title?.runs?.[0]?.text || '';
-      // niente Shorts (non hanno durata) e solo video in cui compare il nome dell'artista
-      if (v.videoId && len && !isAd(title, len) && title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').includes(key)) out.push({ id: v.videoId, title, length: len, ts: relTs(v.publishedTimeText?.simpleText) });
+      const badges = [...(v.badges || []), ...(v.ownerBadges || []), ...(v.sponsoredBadge ? [1] : []), ...(v.adBadge ? [1] : [])];
+      const badged = badges.some(b => b === 1 || /sponsor|annuncio|advert|\bad\b|pubblicit|promot/i.test(JSON.stringify(b)));
+      // niente Shorts (non hanno durata), niente video con etichetta pubblicitaria, solo video in cui compare il nome dell'artista
+      if (v.videoId && len && !badged && !isAd(title, len) && title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').includes(key)) out.push({ id: v.videoId, title, length: len, ts: relTs(v.publishedTimeText?.simpleText) });
     }
     for (const k in o) walk(o[k]);
   })(JSON.parse(m[1]));
