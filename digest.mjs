@@ -377,6 +377,67 @@ ${inner}
 const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy).filter(k => concertsBy[k].length)])]
   .sort((a, b) => a.localeCompare(b, 'it', { sensitivity: 'base' }));
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
+// ---------- Player: video YouTube degli artisti citati (ricerca pubblica, senza chiavi) ----------
+// Per ogni artista tiene i video più recenti tra i risultati della ricerca; la cache dura 24 ore per non interrogare YouTube a ogni giro.
+const VID_CACHE = join(DIR, 'videos-cache.json');
+let vidCache = {};
+try { vidCache = JSON.parse(await readFile(VID_CACHE, 'utf8')); } catch {}
+const playerArtists = [...new Set([...aotd.map(a => a.artist), ...items.filter(i => i.section === 'dischi').map(i => albumKey(i)?.artist)].filter(Boolean))].slice(0, 30);
+async function ytLatest(artist) {
+  const r = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(artist + ' official video')}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' }, signal: AbortSignal.timeout(25000) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const m = (await r.text()).match(/var ytInitialData = (\{[\s\S]*?\});<\/script>/);
+  if (!m) throw new Error('pagina senza dati');
+  const out = [], key = artist.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  (function walk(o) {
+    if (!o || typeof o !== 'object') return;
+    if (o.videoRenderer) {
+      const v = o.videoRenderer, len = v.lengthText?.simpleText || '', title = v.title?.runs?.[0]?.text || '';
+      // niente Shorts (non hanno durata) e solo video in cui compare il nome dell'artista
+      if (v.videoId && len && title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').includes(key)) out.push({ id: v.videoId, title, length: len, ts: relTs(v.publishedTimeText?.simpleText) });
+    }
+    for (const k in o) walk(o[k]);
+  })(JSON.parse(m[1]));
+  const seen = new Set();
+  return out.sort((a, b) => b.ts - a.ts).filter(v => !seen.has(v.id) && seen.add(v.id)).slice(0, 3);
+}
+for (const artist of playerArtists) {
+  const c = vidCache[artist];
+  if (c && NOW - c.t < 24 * H) continue;
+  await new Promise(r => setTimeout(r, 1200));
+  try { vidCache[artist] = { t: NOW, videos: await ytLatest(artist) }; status.push({ name: artist + ' (player)', ok: true, n: vidCache[artist].videos.length }); }
+  catch (e) { status.push({ name: artist + ' (player)', ok: false, err: String(e.message || e) }); }
+}
+await writeFile(VID_CACHE, JSON.stringify(vidCache));
+const playerVideos = playerArtists.flatMap(a => (vidCache[a]?.videos || []).map(v => ({ ...v, artist: a })));
+const playerBlock = playerVideos.length ? `<section id="player" class="sec">
+<header class="sh"><h2>Player</h2><span class="count" id="pl-count"></span><p>Gli ultimi video degli artisti citati, in ordine casuale ad ogni visita</p></header>
+<div class="pl-controls"><select id="pl-artist" aria-label="Filtra per artista"><option value="">Tutti gli artisti</option>${[...new Set(playerVideos.map(v => v.artist))].sort().map(a => `<option value="${h(a)}">${h(a)}</option>`).join('')}</select><button type="button" id="pl-prev">◀ Precedente</button><button type="button" id="pl-next">Successivo ▶</button><button type="button" id="pl-shuffle">Rimescola</button></div>
+<div class="pl-frame"><div id="pl-yt"></div></div><p class="pl-now" id="pl-now"></p>
+<style>.pl-controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.pl-controls select,.pl-controls button{max-width:100%;font:600 14px/1 var(--body);min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--rule);background:var(--chip);color:var(--ink);cursor:pointer}.pl-frame{max-width:100%;position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}.pl-frame iframe,#pl-yt{position:absolute;inset:0;width:100%;height:100%}.pl-now{margin:10px 0 0;font:500 14px/1.4 var(--mono);color:var(--muted)}</style>
+<script>window.PLAYER_VIDEOS=${JSON.stringify(playerVideos).replace(/</g, '\\u003c')};</script>
+<script>
+(function(){
+  var all=window.PLAYER_VIDEOS||[], list=[], pos=0, player=null, ready=false;
+  function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+  function applyFilter(){var v=document.getElementById('pl-artist').value;list=shuffle(all.filter(function(x){return !v||x.artist===v;}));pos=0;document.getElementById('pl-count').textContent=list.length;if(ready&&list.length)player.loadVideoById(list[0].id);}
+  function play(i){if(!list.length)return;pos=(i+list.length)%list.length;var x=list[pos];document.getElementById('pl-now').textContent=x.artist+' — '+x.title+' ('+x.length+')';if(ready)player.loadVideoById(x.id);}
+  function skip(){play(pos+1);}
+  document.getElementById('pl-next').onclick=skip;
+  document.getElementById('pl-prev').onclick=function(){play(pos-1);};
+  document.getElementById('pl-shuffle').onclick=function(){list=shuffle(list);play(0);};
+  document.getElementById('pl-artist').onchange=applyFilter;
+  applyFilter();
+  window.onYouTubeIframeAPIReady=function(){
+    player=new YT.Player('pl-yt',{playerVars:{rel:0,playsinline:1,modestbranding:1},events:{
+      onReady:function(){ready=true;if(list.length)play(0);},
+      onStateChange:function(e){if(e.data===YT.PlayerState.ENDED)skip();},
+      onError:function(){skip();}}});
+  };
+  var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);
+})();
+</script>
+</section>` : '';
 // striscia a scorrimento tipo TG (solo telefono): le ultime notizie, ripetute due volte per un loop continuo
 const tickerNews = items.filter(i => i.section === 'notizie').slice(0, 15);
 const tickerOne = tickerNews.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.title)}</a>`).join('');
@@ -546,9 +607,10 @@ footer .ko{color:var(--hot)}
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + aotd.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 ${tickerHtml}
-<nav class="toc" aria-label="Sezioni">${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
+<nav class="toc" aria-label="Sezioni">${playerBlock ? '<a href="#player">Player</a>' : ''}${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
 <details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
 <p class="fnote" id="fnote" hidden></p>
+${playerBlock}
 <div class="content-grid"><main>${SECTIONS.filter(s => s.id !== 'notizie').map(section).join('\n')}</main><aside class="news-side" aria-label="Notizie">${section(SECTIONS.find(s => s.id === 'notizie'))}</aside></div>
 <footer>
   <p>Fonti: ${status.filter(s => s.ok).map(s => `${h(s.name)} (${s.n})`).join(' · ')}</p>
