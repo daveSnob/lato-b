@@ -349,7 +349,7 @@ function section(s) {
     // data-src elenca tutte le riviste che hanno recensito l'album: il filtro lo mostra se una di queste è scelta
     inner = count ? `<ol class="review-list">${consensus.map(c => `<li class="review-card ca" data-src="${h([...new Set(c.list.map(o => slug(o.src)))].join(' '))}">
   <a href="${h((c.list.find(o => o.image) || c.list[0]).link)}" target="_blank" rel="noopener" title="${h(c.album)}">
-    <span class="cover">${c.image ? `<img src="${h(c.image)}" alt="Cover di ${h(c.album)}" loading="lazy">` : `<span class="cover-ph" aria-hidden="true">${h(c.album.slice(0, 2))}</span>`}</span>
+    <span class="cover">${c.image && IMAGES ? `<img src="${h(c.image)}" alt="Cover di ${h(c.album)}" loading="lazy">` : `<span class="cover-ph" aria-hidden="true">${h(c.album.slice(0, 2))}</span>`}</span>
     <span class="review-title">${h(c.artist)} – ${h(c.album)}</span>
   </a>
   <span class="review-count"><b>${c.list.length}</b> recensioni</span>
