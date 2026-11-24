@@ -284,6 +284,38 @@ for (const r of reviews) {
 }
 const trends = [...trendMap.values()].filter(x => x.recent && x.sources.size >= 2).sort((a, b) => (b.recent - b.previous) - (a.recent - a.previous) || b.recent - a.recent).slice(0, 10);
 
+// ---------- notizia del giorno: cluster di almeno tre fonti ----------
+const newsStop = new Set('the a an and or of to in on for from with is are was were has have this that new news music album single announces announced share shares video tour festival la il lo i gli le un una e di del della dei delle su per con da che nuovo nuova nuovi nuove annuncia annunciato pubblica pubblicato'.split(' '));
+const newsTokens = title => [...new Set(norm(title).split(' ').filter(w => w.length >= 4 && !newsStop.has(w)))];
+const newsItems = items.filter(i => i.section === 'notizie');
+const newsClusters = [];
+for (const item of newsItems) {
+  const toks = new Set(newsTokens(item.title));
+  let cluster = newsClusters.find(c => {
+    const overlap = [...toks].filter(t => c.tokens.has(t)).length;
+    return overlap >= 2 || (overlap === 1 && [...toks].some(t => t.length >= 8));
+  });
+  if (!cluster) { cluster = { items: [], tokens: new Set() }; newsClusters.push(cluster); }
+  cluster.items.push(item); toks.forEach(t => cluster.tokens.add(t));
+}
+const newsDayCluster = newsClusters
+  .map(c => ({ ...c, sources: [...new Set(c.items.map(i => i.src))], latest: Math.max(...c.items.map(i => i.ts || 0)) }))
+  .filter(c => c.sources.length >= 3)
+  .sort((a, b) => b.sources.length - a.sources.length || b.latest - a.latest)[0] || null;
+const newsRelatedClusters = newsClusters
+  .map(c => ({ ...c, sources: [...new Set(c.items.map(i => i.src))], latest: Math.max(...c.items.map(i => i.ts || 0)) }))
+  .filter(c => c.sources.length >= 3 && (!newsDayCluster || c.items.every(i => !newsDayCluster.items.includes(i))))
+  .sort((a, b) => b.latest - a.latest)
+  .slice(0, 2);
+const newsDay = newsDayCluster ? {
+  title: newsDayCluster.items.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0].title,
+  image: newsDayCluster.items.find(i => i.image)?.image || '',
+  latest: newsDayCluster.latest,
+  sources: newsDayCluster.sources,
+  items: newsDayCluster.items
+} : null;
+const newsDayLinks = new Set((newsDay?.items || []).map(i => i.link));
+
 // ---------- render ----------
 const h = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const fmt = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -294,6 +326,7 @@ const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const LANG = { it: 'IT', en: 'EN', fr: 'FR' };
 
 const SECTIONS = [
+  { id: 'notizia-del-giorno', title: 'Notizia del giorno', sub: 'Un tema riportato da almeno tre fonti indipendenti' },
   { id: 'disco-del-giorno', title: 'Disco del giorno', sub: 'La scelta quotidiana di Bandcamp Daily: oggi e i 7 giorni precedenti, da scorrere' },
   { id: 'piu-recensiti', title: 'Più recensiti', sub: `Album recensiti da almeno due riviste negli ultimi ${ARCHIVE_DAYS} giorni` },
   { id: 'concerti', title: 'YouTube concert', sub: `Ultime sessioni complete di KEXP e concerti NPR Tiny Desk (ultimi ${cfg.concertDays || 60} giorni)` },
@@ -328,7 +361,19 @@ function editorialRow(x, label, detail) {
 }
 function section(s) {
   let inner, count;
-  if (s.id === 'disco-del-giorno') {
+  if (s.id === 'notizia-del-giorno') {
+    count = newsDay ? 1 : 0;
+    inner = newsDay ? `<article class="aotd news-aotd">
+  <a class="aotd-cover" href="${h(newsDay.items[0].link)}" target="_blank" rel="noopener">${newsDay.image && IMAGES ? `<img src="${h(newsDay.image)}" alt="" loading="eager">` : `<span class="cover-ph" aria-hidden="true">NEWS</span>`}</a>
+  <div class="aotd-body">
+    <span class="editorial-label">${newsDay.sources.length} fonti · ${h(fmtDay.format(newsDay.latest))}</span>
+    <h3><a href="${h(newsDay.items[0].link)}" target="_blank" rel="noopener"><span class="aotd-album">${h(newsDay.title)}</span></a></h3>
+    <p class="ex">La stessa notizia è stata individuata in articoli pubblicati da ${h(newsDay.sources.join(' · '))}.</p>
+    <div class="news-source-links">${newsDay.items.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.src)}</a>`).join(' · ')}</div>
+    ${newsRelatedClusters.length ? `<div class="news-related"><span class="editorial-label">Altre notizie riportate da almeno 3 fonti</span><ul>${newsRelatedClusters.map(c => { const first = c.items.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0]; return `<li><a href="${h(first.link)}" target="_blank" rel="noopener">${h(first.title)}</a><span>${c.sources.length} fonti · ${h(fmtDay.format(c.latest))}</span></li>`; }).join('')}</ul></div>` : ''}
+  </div>
+</article>` : '<p class="empty">Nessuna notizia è stata riportata da almeno tre fonti in questa finestra.</p>';
+  } else if (s.id === 'disco-del-giorno') {
     count = giorno.length;
     const slides = giorno.map((a, i) => `<article class="aotd">
   <a class="aotd-cover" href="${h(a.link)}" target="_blank" rel="noopener">${aotdCover(a, i === 0)}</a>
@@ -613,6 +658,15 @@ ul{list-style:none;margin:0;padding:0}
 .aotd-album{font:900 clamp(36px,6vw,56px)/.95 var(--display);text-transform:uppercase;text-wrap:balance;overflow-wrap:anywhere}
 .aotd .ex{font-size:16px;color:var(--ink)}
 .aotd-read{font:500 13px/1.4 var(--mono);color:var(--accent)}
+.news-source-links{font:500 13px/1.5 var(--mono);color:var(--accent)}
+.news-source-links a{text-decoration:none}
+.news-source-links a:hover{text-decoration:underline;text-underline-offset:3px}
+.news-related{margin-top:18px;padding-top:14px;border-top:1px solid var(--rule)}
+.news-related ul{display:grid;gap:10px;margin-top:8px}
+.news-related li{display:grid;gap:2px}
+.news-related li a{font-weight:600;text-decoration:none}
+.news-related li a:hover{text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+.news-related li span{font:400 12px/1.4 var(--mono);color:var(--muted)}
 .aotd-prev{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px 14px;margin-top:26px;padding-top:18px;border-top:1px solid var(--rule)}
 .aotd-prev a{text-decoration:none;display:grid;gap:6px}
 .aotd-prev .review-title{font-size:14px}
