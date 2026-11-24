@@ -285,18 +285,18 @@ for (const r of reviews) {
 const trends = [...trendMap.values()].filter(x => x.recent && x.sources.size >= 2).sort((a, b) => (b.recent - b.previous) - (a.recent - a.previous) || b.recent - a.recent).slice(0, 10);
 
 // ---------- notizia del giorno: cluster di almeno tre fonti ----------
-const newsStop = new Set('the a an and or of to in on for from with is are was were has have this that new news music album single announces announced share shares video tour festival la il lo i gli le un una e di del della dei delle su per con da che nuovo nuova nuovi nuove annuncia annunciato pubblica pubblicato'.split(' '));
+const newsStop = new Set('the a an and or of to in on for from with is are was were has have this that new news music album single announces announced announce share shares shared video tour festival dates date show shows live song songs release releases released publishing la il lo i gli le un una e di del della dei delle su per con da che nuovo nuova nuovi nuove annuncia annunciato annunciano pubblica pubblicato torna tornano nuovo nuova aprile maggio giugno luglio agosto settembre ottobre novembre dicembre'.split(' '));
 const newsTokens = title => [...new Set(norm(title).split(' ').filter(w => w.length >= 4 && !newsStop.has(w)))];
 const newsItems = items.filter(i => i.section === 'notizie');
 const newsClusters = [];
 for (const item of newsItems) {
   const toks = new Set(newsTokens(item.title));
-  let cluster = newsClusters.find(c => {
-    const overlap = [...toks].filter(t => c.tokens.has(t)).length;
-    return overlap >= 2 || (overlap === 1 && [...toks].some(t => t.length >= 8));
-  });
-  if (!cluster) { cluster = { items: [], tokens: new Set() }; newsClusters.push(cluster); }
-  cluster.items.push(item); toks.forEach(t => cluster.tokens.add(t));
+  // Tutti gli articoli del cluster devono condividere due parole-soggetto.
+  // Manteniamo l'intersezione, non l'unione, per evitare fusioni transitive tra temi diversi.
+  let cluster = newsClusters.find(c => [...c.common].filter(t => toks.has(t)).length >= 2);
+  if (!cluster) { cluster = { items: [], common: new Set(toks) }; newsClusters.push(cluster); }
+  cluster.items.push(item);
+  cluster.common = new Set([...cluster.common].filter(t => toks.has(t)));
 }
 const newsDayCluster = newsClusters
   .map(c => ({ ...c, sources: [...new Set(c.items.map(i => i.src))], latest: Math.max(...c.items.map(i => i.ts || 0)) }))
