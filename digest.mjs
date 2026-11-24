@@ -727,11 +727,11 @@ footer .ko{color:var(--hot)}
   <p class="stats"><span>Aggiornato <b>${h(fmtLong.format(NOW))}</b></span><span><b>${items.length + aotd.length}</b> segnalazioni</span><span><b>${newCount}</b> nelle ultime ${cfg.newHours} ore</span><span><b>${status.filter(s => s.ok).length}</b> fonti attive</span></p>
 </header>
 ${tickerHtml}
-<nav class="toc" aria-label="Sezioni">${playerBlock ? '<button type="button" id="pl-open" class="pl-open" aria-controls="player" aria-expanded="false">Player ▾</button>' : ''}${SECTIONS.filter(s => s.id !== 'notizie').map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
+<nav class="toc" aria-label="Sezioni">${playerBlock ? '<button type="button" id="pl-open" class="pl-open" aria-controls="player" aria-expanded="false">Player ▾</button>' : ''}${SECTIONS.filter(s => s.id !== 'notizie' && (s.id !== 'notizia-del-giorno' || newsDay)).map(s => `<a href="#${s.id}">${h(s.title)}</a>`).join('')}<a href="#notizie">Notizie</a></nav>
 <details class="filter-drawer"><summary>Mostra solo: filtri fonti</summary><div class="filters" role="group" aria-label="Mostra solo le fonti selezionate"><span>Fonti:</span>${sources.map(s => `<button type="button" id="f-${slug(s)}" data-src="${slug(s)}" aria-pressed="false">${h(s)}</button>`).join('')}<button type="button" id="f-onlynew" class="only" aria-pressed="false">solo nuovi</button><button type="button" id="f-all" class="reset" hidden>tutte le fonti</button></div></details>
 <p class="fnote" id="fnote" hidden></p>
 ${playerBlock}
-<div class="content-grid"><main>${SECTIONS.filter(s => s.id !== 'notizie').map(section).join('\n')}</main><aside class="news-side" aria-label="Notizie">${section(SECTIONS.find(s => s.id === 'notizie'))}</aside></div>
+<div class="content-grid"><main>${SECTIONS.filter(s => s.id !== 'notizie' && (s.id !== 'notizia-del-giorno' || newsDay)).map(section).join('\n')}</main><aside class="news-side" aria-label="Notizie">${section(SECTIONS.find(s => s.id === 'notizie'))}</aside></div>
 <footer>
   <p>Fonti: ${status.filter(s => s.ok).map(s => `${h(s.name)} (${s.n})`).join(' · ')}</p>
   ${failed.length ? `<p class="ko">Non raggiunte a questo giro: ${failed.map(s => `${h(s.name)} – ${h(s.err)}`).join(' · ')}</p>` : ''}
