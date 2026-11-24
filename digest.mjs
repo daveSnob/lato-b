@@ -307,12 +307,15 @@ const newsRelatedClusters = newsClusters
   .filter(c => c.sources.length >= 3 && (!newsDayCluster || c.items.every(i => !newsDayCluster.items.includes(i))))
   .sort((a, b) => b.latest - a.latest)
   .slice(0, 2);
+const newsLead = newsDayCluster ? newsDayCluster.items.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0] : null;
 const newsDay = newsDayCluster ? {
-  title: newsDayCluster.items.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0].title,
-  image: newsDayCluster.items.find(i => i.image)?.image || '',
+  title: newsLead.title,
+  // L'immagine deve appartenere all'articolo principale, non a un articolo casuale del cluster.
+  image: newsLead.image || '',
   latest: newsDayCluster.latest,
   sources: newsDayCluster.sources,
-  items: newsDayCluster.items
+  items: newsDayCluster.items,
+  sourceItems: [...new Map(newsDayCluster.items.map(i => [i.src, i])).values()]
 } : null;
 const newsDayLinks = new Set((newsDay?.items || []).map(i => i.link));
 
@@ -364,12 +367,12 @@ function section(s) {
   if (s.id === 'notizia-del-giorno') {
     count = newsDay ? 1 : 0;
     inner = newsDay ? `<article class="aotd news-aotd">
-  <a class="aotd-cover" href="${h(newsDay.items[0].link)}" target="_blank" rel="noopener">${newsDay.image && IMAGES ? `<img src="${h(newsDay.image)}" alt="" loading="eager">` : `<span class="cover-ph" aria-hidden="true">NEWS</span>`}</a>
+  <a class="aotd-cover" href="${h(newsLead.link)}" target="_blank" rel="noopener">${newsDay.image && IMAGES ? `<img src="${h(newsDay.image)}" alt="Immagine della notizia: ${h(newsDay.title)}" loading="eager">` : `<span class="cover-ph" aria-hidden="true">NEWS</span>`}</a>
   <div class="aotd-body">
     <span class="editorial-label">${newsDay.sources.length} fonti · ${h(fmtDay.format(newsDay.latest))}</span>
-    <h3><a href="${h(newsDay.items[0].link)}" target="_blank" rel="noopener"><span class="aotd-album">${h(newsDay.title)}</span></a></h3>
+    <h3><a href="${h(newsLead.link)}" target="_blank" rel="noopener"><span class="aotd-album">${h(newsDay.title)}</span></a></h3>
     <p class="ex">La stessa notizia è stata individuata in articoli pubblicati da ${h(newsDay.sources.join(' · '))}.</p>
-    <div class="news-source-links">${newsDay.items.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.src)}</a>`).join(' · ')}</div>
+    <div class="news-source-links">${newsDay.sourceItems.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.src)}</a>`).join(' · ')}</div>
     ${newsRelatedClusters.length ? `<div class="news-related"><span class="editorial-label">Altre notizie riportate da almeno 3 fonti</span><ul>${newsRelatedClusters.map(c => { const first = c.items.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0]; return `<li><a href="${h(first.link)}" target="_blank" rel="noopener">${h(first.title)}</a><span>${c.sources.length} fonti · ${h(fmtDay.format(c.latest))}</span></li>`; }).join('')}</ul></div>` : ''}
   </div>
 </article>` : '<p class="empty">Nessuna notizia è stata riportata da almeno tre fonti in questa finestra.</p>';
