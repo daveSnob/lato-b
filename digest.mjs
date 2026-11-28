@@ -321,6 +321,7 @@ const newsDayLinks = new Set((newsDay?.items || []).map(i => i.link));
 
 // ---------- render ----------
 const h = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const shareBtn = (url, title) => `<button type="button" class="share-btn" data-share-url="${h(url)}" data-share-title="${h(title)}">Condividi</button>`;
 const fmt = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const fmtLong = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const fmtDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'short' });
@@ -349,13 +350,13 @@ function row(it) {
 </li>`;
 }
 function aotdCover(a, big) {
-  return IMAGES && a.image ? `<img src="${h(a.image)}" alt="Cover di ${h(a.album)}" loading="${big ? 'eager' : 'lazy'}">` : `<span class="cover-ph" aria-hidden="true">${h(a.album.slice(0, 2))}</span>`;
+  return IMAGES && a.image ? `<img src="${h(a.image)}" onerror="this.hidden=true;this.parentNode.classList.add('img-failed')" alt="Cover di ${h(a.album)}" loading="${big ? 'eager' : 'lazy'}">` : `<span class="cover-ph" aria-hidden="true">${h(a.album.slice(0, 2))}</span>`;
 }
 // "Russian Circles - Full Performance (Live on KEXP)" / "CMAT: Tiny Desk Concert" -> artista + etichetta
 function concertCard(c) {
   const artist = c.title.replace(/\s*[-–—:|]\s*(Full Performance.*|Tiny Desk Concert.*)$/i, '').replace(/\s*\(Live on KEXP\)\s*$/i, '').trim() || c.title;
   const label = c.src === 'KEXP' ? 'Full Performance · Live on KEXP' : 'Tiny Desk Concert';
-  const thumb = IMAGES ? `<img src="https://i.ytimg.com/vi/${h(c.vid)}/hqdefault.jpg" alt="" loading="lazy" width="480" height="360">` : '<span class="ph" aria-hidden="true">▶</span>';
+  const thumb = IMAGES ? `<img src="https://i.ytimg.com/vi/${h(c.vid)}/hqdefault.jpg" onerror="this.hidden=true;this.parentNode.classList.add('img-failed')" alt="" loading="lazy" width="480" height="360">` : '<span class="ph" aria-hidden="true">▶</span>';
   const when = c.approx ? `<span title="data approssimativa">≈ ${h(fmtDay.format(c.ts))}</span>` : `<time>${h(fmt.format(c.ts))}</time>`;
   return `<li class="card" data-src="${h(slug(c.src))}"${isNew(c.ts) ? ' data-new' : ''}><a href="https://www.youtube.com/watch?v=${h(c.vid)}" target="_blank" rel="noopener"><span class="thumb">${thumb}${isNew(c.ts) ? '<span class="pill solid">nuovo</span>' : ''}</span><span class="ct">${h(artist)}</span></a><span class="cm">${h(label)} · ${when}</span></li>`;
 }
@@ -372,7 +373,7 @@ function section(s) {
     <span class="editorial-label">${newsDay.sources.length} fonti · ${h(fmtDay.format(newsDay.latest))}</span>
     <h3><a href="${h(newsLead.link)}" target="_blank" rel="noopener"><span class="aotd-album">${h(newsDay.title)}</span></a></h3>
     <p class="ex">La stessa notizia è stata individuata in articoli pubblicati da ${h(newsDay.sources.join(' · '))}.</p>
-    <div class="news-source-links">${newsDay.sourceItems.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.src)}</a>`).join(' · ')}</div>
+    <div class="news-source-links">${newsDay.sourceItems.map(i => `<a href="${h(i.link)}" target="_blank" rel="noopener">${h(i.src)}</a>`).join(' · ')}</div>${shareBtn(newsLead.link, newsDay.title)}
     ${newsRelatedClusters.length ? `<div class="news-related"><span class="editorial-label">Altre notizie riportate da almeno 3 fonti</span><ul>${newsRelatedClusters.map(c => { const first = c.items.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0]; return `<li><a href="${h(first.link)}" target="_blank" rel="noopener">${h(first.title)}</a><span>${c.sources.length} fonti · ${h(fmtDay.format(c.latest))}</span></li>`; }).join('')}</ul></div>` : ''}
   </div>
 </article>` : '<p class="empty">Nessuna notizia è stata riportata da almeno tre fonti in questa finestra.</p>';
@@ -384,7 +385,7 @@ function section(s) {
     <span class="editorial-label">Bandcamp Daily · ${h(fmtDay.format(a.ts))}${i === 0 && isNew(a.ts) ? ' · <span class="pill">nuovo</span>' : ''}</span>
     <h3><a href="${h(a.link)}" target="_blank" rel="noopener">${a.artist ? `<span class="aotd-artist">${h(a.artist)}</span>` : ''}<span class="aotd-album">${h(a.album)}</span></a></h3>
     ${a.ex ? `<p class="ex">${h(a.ex)}</p>` : ''}
-    <a class="aotd-read" href="${h(a.link)}" target="_blank" rel="noopener">Leggi la recensione e ascolta →</a>
+    <a class="aotd-read" href="${h(a.link)}" target="_blank" rel="noopener">Leggi la recensione e ascolta →</a>${shareBtn(a.link, `${a.artist ? a.artist + ' – ' : ''}${a.album}`)}
   </div>
 </article>`).join('');
     inner = giorno.length ? `<div class="aotd-car">
@@ -397,11 +398,11 @@ function section(s) {
     // data-src elenca tutte le riviste che hanno recensito l'album: il filtro lo mostra se una di queste è scelta
     inner = count ? `<ol class="review-list">${consensus.map(c => `<li class="review-card ca" data-src="${h([...new Set(c.list.map(o => slug(o.src)))].join(' '))}">
   <a href="${h((c.list.find(o => o.image) || c.list[0]).link)}" target="_blank" rel="noopener" title="${h(c.album)}">
-    <span class="cover">${c.image && IMAGES ? `<img src="${h(c.image)}" alt="Cover di ${h(c.album)}" loading="lazy">` : `<span class="cover-ph" aria-hidden="true">${h(c.album.slice(0, 2))}</span>`}</span>
+    <span class="cover">${c.image && IMAGES ? `<img src="${h(c.image)}" onerror="this.hidden=true;this.parentNode.classList.add('img-failed')" alt="Cover di ${h(c.album)}" loading="lazy">` : `<span class="cover-ph" aria-hidden="true">${h(c.album.slice(0, 2))}</span>`}</span>
     <span class="review-title">${h(c.artist)} – ${h(c.album)}</span>
   </a>
   <span class="review-count"><b>${c.list.length}</b> recensioni</span>
-  <span class="review-meta">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a>`).join(' · ')}</span>
+  <span class="review-meta">${c.list.map(o => `<a href="${h(o.link)}" target="_blank" rel="noopener">${h(o.src)}</a>`).join(' · ')}</span>${shareBtn((c.list[0] || {}).link, `${c.artist} – ${c.album}`)}
 </li>`).join('')}</ol>`
       : `<p class="empty">Nessun album recensito da più riviste per ora. L'archivio si riempie a ogni aggiornamento: in pochi giorni compariranno i primi.</p>`;
   } else if (s.id === 'concerti') {
@@ -501,7 +502,7 @@ async function ytLatest(artist) {
     picked = hits.filter(v => (isArtistOwner(v.owner, key) || normName(v.title).includes(key)) && !isAd(v.title, v.length) && PLAYER_RE.test(v.title)).sort((a, b) => b.ts - a.ts);
   }
   const seen = new Set();
-  return picked.filter(v => !seen.has(v.id) && seen.add(v.id)).slice(0, 3).map((v, i) => ({ id: v.id, title: v.title, length: v.length, ts: v.ts, latest: i === 0 }));
+  return picked.filter(v => !seen.has(v.id) && seen.add(v.id)).slice(0, 3).map((v, i) => ({ id: v.id, title: v.title, length: v.length, owner: v.owner || '', ts: v.ts, latest: i === 0 }));
 }
 for (const artist of playerArtists) {
   const c = vidCache[artist];
@@ -515,15 +516,15 @@ const playerVideos = playerArtists.flatMap(a => (vidCache[a]?.videos || []).filt
 const playerBlock = playerVideos.length ? `<section id="player" class="sec pl-collapsed">
 <header class="sh"><h2>Player</h2><span class="count" id="pl-count"></span><p>Gli ultimi video degli artisti citati, in ordine casuale ad ogni visita</p></header>
 <div class="pl-controls"><select id="pl-artist" aria-label="Filtra per artista"><option value="">Tutti gli artisti</option>${[...new Set(playerVideos.map(v => v.artist))].sort().map(a => `<option value="${h(a)}">${h(a)}</option>`).join('')}</select><button type="button" id="pl-prev">◀ Precedente</button><button type="button" id="pl-next">Successivo ▶</button><button type="button" id="pl-shuffle">Rimescola</button></div>
-<div class="pl-frame"><div id="pl-yt"></div></div><p class="pl-now" id="pl-now"></p>
-<style>.pl-controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.pl-controls select,.pl-controls button{max-width:100%;font:600 14px/1 var(--body);min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--rule);background:var(--chip);color:var(--ink);cursor:pointer}.pl-frame{max-width:100%;position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}.pl-frame iframe,#pl-yt{position:absolute;inset:0;width:100%;height:100%}.pl-now{margin:10px 0 0;font:500 14px/1.4 var(--mono);color:var(--muted)}#player.pl-collapsed{display:none}.pl-open{flex:none;font:600 13px/1 var(--body);padding:8px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--accent);color:var(--paper);cursor:pointer}</style>
+<div class="pl-frame"><div id="pl-yt"></div></div><p class="pl-now" id="pl-now"></p><a class="pl-youtube" id="pl-youtube" href="#" target="_blank" rel="noopener">Apri il video su YouTube ↗</a>
+<style>.pl-controls{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.pl-controls select,.pl-controls button{max-width:100%;font:600 14px/1 var(--body);min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--rule);background:var(--chip);color:var(--ink);cursor:pointer}.pl-frame{max-width:100%;position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}.pl-frame iframe,#pl-yt{position:absolute;inset:0;width:100%;height:100%}.pl-now{margin:10px 0 3px;font:500 14px/1.4 var(--mono);color:var(--muted)}.pl-youtube{font:600 13px/1.4 var(--mono);color:var(--accent)}#player.pl-collapsed{display:none}.pl-open{flex:none;font:600 13px/1 var(--body);padding:8px 12px;border:1px solid var(--rule);border-radius:999px;background:var(--accent);color:var(--paper);cursor:pointer}</style>
 <script>window.PLAYER_VIDEOS=${JSON.stringify(playerVideos).replace(/</g, '\\u003c')};</script>
 <script>
 (function(){
   var all=window.PLAYER_VIDEOS||[], list=[], pos=0, player=null, ready=false;
   function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
   function applyFilter(){var v=document.getElementById('pl-artist').value;list=shuffle(all.filter(function(x){return !v||x.artist===v;}));pos=0;document.getElementById('pl-count').textContent=list.length;if(ready&&list.length)player.loadVideoById(list[0].id);}
-  function play(i){if(!list.length)return;pos=(i+list.length)%list.length;var x=list[pos];document.getElementById('pl-now').textContent=x.artist+' — '+x.title+' ('+x.length+')';if(ready)player.loadVideoById(x.id);}
+  function play(i){if(!list.length)return;pos=(i+list.length)%list.length;var x=list[pos];document.getElementById('pl-now').textContent=x.artist+' · '+(x.owner||'Canale ufficiale')+' — '+x.title+' ('+x.length+')';document.getElementById('pl-youtube').href='https://www.youtube.com/watch?v='+encodeURIComponent(x.id);if(ready)player.loadVideoById(x.id);}
   function skip(){play(pos+1);}
   document.getElementById('pl-next').onclick=skip;
   document.getElementById('pl-prev').onclick=function(){play(pos-1);};
@@ -646,6 +647,8 @@ ul{list-style:none;margin:0;padding:0}
 .aotd{display:grid;grid-template-columns:minmax(0,320px) 1fr;gap:20px 28px;align-items:start;margin-top:16px}
 .aotd-cover{display:block;aspect-ratio:1/1;border-radius:4px;overflow:hidden;background:var(--chip)}
 .aotd-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.img-failed{background:var(--chip)}.img-failed::after{content:'Immagine non disponibile';display:grid;place-items:center;height:100%;min-height:80px;font:500 11px/1.2 var(--mono);color:var(--muted);text-align:center;padding:8px;box-sizing:border-box}
+.share-btn{font:600 12px/1 var(--mono);color:var(--accent);background:transparent;border:1px solid var(--rule);border-radius:999px;padding:7px 10px;cursor:pointer;width:max-content}.share-btn:hover{background:var(--chip);border-color:var(--ink)}
 .aotd-car{margin-top:16px}
 .aotd-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
 .aotd-track::-webkit-scrollbar{display:none}
@@ -755,6 +758,7 @@ ${playerBlock}
 
   // filtro "mostra solo": sel = fonti scelte (vuoto = tutte). Una voce può avere più fonti (album "Più recensiti").
   // Con un filtro attivo spariscono le sezioni rimaste vuote, con la loro voce nell'indice.
+  document.querySelectorAll('.share-btn').forEach(function(b){b.addEventListener('click',async function(){var u=b.dataset.shareUrl,t=b.dataset.shareTitle||document.title;try{if(navigator.share)await navigator.share({title:t,url:u});else{await navigator.clipboard.writeText(u);var old=b.textContent;b.textContent='Link copiato';setTimeout(function(){b.textContent=old},1600)}}catch(e){}})});
   var KEY='latob-filters', sel={}, onlyNew=false, ITEMS='.it,.card,.ca';
   try{var s=JSON.parse(localStorage.getItem(KEY)||'{}');sel=s.sel||{};onlyNew=!!s.onlyNew}catch(e){}
   var btns=document.querySelectorAll('.filters button[data-src]'), nb=document.getElementById('f-onlynew'), all=document.getElementById('f-all'), note=document.getElementById('fnote');
