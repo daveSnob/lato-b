@@ -439,7 +439,7 @@ const sources = [...new Set([...items.map(i => i.src), ...Object.keys(concertsBy
 const newCount = items.filter(i => isNew(i.ts)).length + aotd.filter(a => isNew(a.ts)).length;
 // ---------- Player: video YouTube degli artisti citati (ricerca pubblica, senza chiavi) ----------
 // Per ogni artista tiene i video più recenti tra i risultati della ricerca; la cache dura 24 ore per non interrogare YouTube a ogni giro.
-const VID_CACHE = join(DIR, 'videos-cache-v7.json'); // v3: filtro pubblicità potenziato (blocchi promo, badge, parole chiave)
+const VID_CACHE = join(DIR, 'videos-cache-v8.json'); // v8: solo Official Video / Official Visualizer
 let vidCache = {};
 try { vidCache = JSON.parse(await readFile(VID_CACHE, 'utf8')); } catch {}
 // solo gli artisti della sezione "Più recensiti", in ordine di recensioni
@@ -449,6 +449,7 @@ const secondsOf = s => s.split(':').reduce((t, x) => t * 60 + Number(x), 0);
 // titoli di album completi, spot e contenuti promozionali; oltre 12 minuti non è un singolo
 const AD_RE = /\bfull\b|\bfull[- ]?(album|lp|ep|set|concert|show|movie|film)\b|\bpubblicit|\breklam|\bsponsor|\badvert|\bcommercial|\bspot\b|\bpromo\b|\bpromotion|\bteaser\b|\btrailer\b|\bad\b|\bads\b|\bcampaign|\bcampagna|\bbrand\b|\bsponsored\b|\bshop\s+now|\bbuy\s+now|\bout\s+now\s+on\b|\bpre[- ]?save\b|\bgiveaway\b|\bcontest\b|\bconcorso\b|\breview\b|\bvlog\b|\bdocumentary\b|\binterview\b|\bpodcast\b|\breaction\b|\bpresents?\b|\bamazon\b|\bspotify\b|\bapple\s+music\b|\bdeezer\b|\btidal\b|\byoutube\s+music\b|\bcalvin\s+klein\b|\bnike\b|\badidas\b|\bgucci\b|\bsony\b|\bcollab\s+with\b|\bblack\s+friday\b|\bcyber\s+monday\b|\bsconti?\b|\boffert[ae]\b|\bsaldi\b|\bpromozione\b|\bcoupon\b|\bnespresso\b|\b\d+\s?%|\b[a-z0-9-]+\.(it|com|net|eu|shop|store)\b|\b(fiat|ford|toyota|bmw|mercedes|audi|volkswagen|renault|peugeot|citro[eë]n|opel|volvo|tesla|hyundai|kia|nissan|honda|mazda|skoda|dacia|porsche|lamborghini|alfa\s+romeo|kinder|nutella|ferrero|barilla|mulino\s+bianco|pringles|coca[- ]cola|pepsi|red\s+bull|lindt|oreo|lay'?s|doritos|mcdonald'?s|burger\s+king|kfc|starbucks|heineken|haribo|milka|nesquik|ikea|zara|h\s*&\s*m)\b|\bsession\s+sponsored\b/i;
 const isAd = (title, len) => AD_RE.test(title) || secondsOf(len) > 12 * 60;
+const PLAYER_RE = /\bofficial\s+(?:(?:music|lyric)\s+)?video\b|\bofficial\s+visuali[sz]er\b/i;
 // ---- ricerca del video più recente: prima il canale ufficiale dell'artista (scheda Video, ordinata dal più recente), poi i risultati di ricerca ----
 const UA_YT = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' };
 async function ytData(url) {
@@ -493,11 +494,11 @@ async function ytLatest(artist) {
     // scheda Video del canale: i video più recenti sono i primi
     await new Promise(r => setTimeout(r, 1200));
     const page = await ytData(`https://www.youtube.com/channel/${channel.ownerId}/videos`);
-    picked = ytVideos(page).filter(v => v.length && !v.badged && !isAd(v.title, v.length));
+    picked = ytVideos(page).filter(v => v.length && !v.badged && !isAd(v.title, v.length) && PLAYER_RE.test(v.title));
   }
   if (!picked.length) {
     // ripiego: risultati di ricerca di canali dell'artista o titoli che lo nominano
-    picked = hits.filter(v => (isArtistOwner(v.owner, key) || normName(v.title).includes(key)) && !isAd(v.title, v.length)).sort((a, b) => b.ts - a.ts);
+    picked = hits.filter(v => (isArtistOwner(v.owner, key) || normName(v.title).includes(key)) && !isAd(v.title, v.length) && PLAYER_RE.test(v.title)).sort((a, b) => b.ts - a.ts);
   }
   const seen = new Set();
   return picked.filter(v => !seen.has(v.id) && seen.add(v.id)).slice(0, 3).map((v, i) => ({ id: v.id, title: v.title, length: v.length, ts: v.ts, latest: i === 0 }));
@@ -510,7 +511,7 @@ for (const artist of playerArtists) {
   catch (e) { status.push({ name: artist + ' (player)', ok: false, err: String(e.message || e) }); }
 }
 await writeFile(VID_CACHE, JSON.stringify(vidCache));
-const playerVideos = playerArtists.flatMap(a => (vidCache[a]?.videos || []).map(v => ({ ...v, artist: a })));
+const playerVideos = playerArtists.flatMap(a => (vidCache[a]?.videos || []).filter(v => PLAYER_RE.test(v.title)).map(v => ({ ...v, artist: a })));
 const playerBlock = playerVideos.length ? `<section id="player" class="sec pl-collapsed">
 <header class="sh"><h2>Player</h2><span class="count" id="pl-count"></span><p>Gli ultimi video degli artisti citati, in ordine casuale ad ogni visita</p></header>
 <div class="pl-controls"><select id="pl-artist" aria-label="Filtra per artista"><option value="">Tutti gli artisti</option>${[...new Set(playerVideos.map(v => v.artist))].sort().map(a => `<option value="${h(a)}">${h(a)}</option>`).join('')}</select><button type="button" id="pl-prev">◀ Precedente</button><button type="button" id="pl-next">Successivo ▶</button><button type="button" id="pl-shuffle">Rimescola</button></div>
@@ -814,5 +815,5 @@ ${playerBlock}
 IMAGES = false;
 await writeFile(join(DIR, 'artifact.html'), page());
 IMAGES = true;
-await writeFile(join(DIR, 'lato-b.html'), `<!doctype html>\n<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${page().replace('</style>', '</style></head><body>')}</body></html>\n`);
+await writeFile(join(DIR, 'lato-b.html'), `<!doctype html>\n<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231c1f22'/%3E%3Cpath d='M17 14h12v25a10 10 0 1 1-6-9V14h24v12H35v13a10 10 0 1 1-6-9V14z' fill='%23d7ff38'/%3E%3C/svg%3E">\n${page().replace('</style>', '</style></head><body>')}</body></html>\n`);
 console.log(JSON.stringify({ items: items.length, bySection: Object.fromEntries(['dischi', 'brani', 'notizie', 'approfondimenti'].map(k => [k, items.filter(i => i.section === k).length])), aotd: aotd.length, status }, null, 1));
